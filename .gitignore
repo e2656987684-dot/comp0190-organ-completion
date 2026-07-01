@@ -216,3 +216,17 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# 数据与大文件，绝不上传
+data/
+*.stl
+*.nrrd
+*.nii
+*.nii.gz
+*.ply
+*.obj
+*.npz
+*.npy
+*.pth
+*.ckpt
+experiments/
