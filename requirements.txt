@@ -7,3 +7,7 @@ matplotlib
 tqdm
 pyyaml
 # 训练阶段再按需加：torch / torchvision 等
+tensorflow
+tensorflow-graphics
+torch 
+torchvision
