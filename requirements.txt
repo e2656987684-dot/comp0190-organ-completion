@@ -1,4 +1,4 @@
-numpy<2
+numpy
 scipy
 trimesh
 open3d
@@ -8,24 +8,9 @@ tqdm
 pyyaml
 pynrrd
 plotly
-
-# MSN demo (PCT + BERT 多模态点云自编码器)：需要 Python 3.11 + tensorflow<2.16
-# 这是 transformers 官方验证过的最后一组还带 TFBertModel 的组合（更高版本 TF 需要
-# numpy>=2，跟 transformers 的 TF 支持要求的 numpy<2 冲突；transformers>=5 直接砍掉了
-# TF 后端）。tensorflow<2.16 也没有 Python 3.12 的 wheel，所以这部分必须用 3.11 venv。
-# [and-cuda] extra 是为了让 tensorflow 自带匹配的 CUDA 12 库（否则找不到 GPU）。
-tensorflow[and-cuda]<2.16
-transformers<5
 fpsample
 
 # 训练阶段再按需加：torch / torchvision 等
 torch
 torchvision
 torchaudio
-
-# 已知坑：nvidia-nccl-cu12（tensorflow[and-cuda] 装的）和 nvidia-nccl-cu13（torch 装的）
-# 会装到同一个路径 site-packages/nvidia/nccl/ 下，后装的会覆盖先装的文件，导致 torch
-# 报 "undefined symbol: ncclCommResume"。全部装完后需要再跑一次：
-#   pip install --force-reinstall --no-deps "nvidia-nccl-cu13==2.29.7"
-# 单卡场景不需要真正的 nccl（那是多卡通信库），强制装回 cu13 版本文件即可让 torch 恢复正常，
-# 不影响 tensorflow 单卡使用。

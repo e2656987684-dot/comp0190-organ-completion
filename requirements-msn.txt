@@ -1,0 +1,20 @@
+# 只给 notebooks/demo/ 里那两个 MSN (PCT + BERT 多模态点云自编码器) demo notebook 用。
+# 单独拆出来、用独立 conda 环境装，是为了跟主项目的 torch 环境彻底隔离——
+# 之前在同一个环境里同时装 tensorflow[and-cuda] 和 torch，两边的 nvidia-nccl
+# 包（cu12 / cu13）会装到同一个物理路径互相覆盖，导致 torch 崩掉。分开环境后
+# 这个问题不会再出现，也不需要额外的 nccl 修复步骤。
+#
+# 版本限制的原因：
+#   - Python 必须是 3.11：PyPI 上 tensorflow<2.16 没有 cp312 wheel。
+#   - tensorflow 必须 <2.16：这是 transformers 官方验证过的、还带 TFBertModel
+#     的最后一档 TF 版本；更高版本的 TF 默认 Keras 3，需要 numpy>=2，
+#     跟这里 numpy<2 的要求冲突。
+#   - transformers 必须 <5：5.0 开始彻底砍掉了 TensorFlow 后端（TFBertModel 等）。
+#   - [and-cuda] extra 让 tensorflow 自带匹配的 CUDA 12 库，否则找不到 GPU。
+numpy<2
+trimesh
+pynrrd
+plotly
+fpsample
+tensorflow[and-cuda]<2.16
+transformers<5

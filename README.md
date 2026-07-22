@@ -26,5 +26,10 @@ source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
+On a fresh GPU pod, `bash setup_env.sh` sets up conda environments instead (see
+comments in that file): `comp0190` (torch, main project work) and `comp0190-msn`
+(tensorflow, only for the legacy MSN demo notebooks under `notebooks/demo/`,
+kept in a separate environment so its TF/CUDA deps never collide with torch's).
+
 ## Data
 Data is NOT stored in this repo (see .gitignore). It lives on Google Drive / UCL HPC.

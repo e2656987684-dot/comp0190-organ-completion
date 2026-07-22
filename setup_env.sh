@@ -1,23 +1,18 @@
 #!/bin/bash
-# ===== 新 pod 一键环境搭建脚本 =====
+# ===== 新 pod 一键环境搭建脚本（conda 版）=====
 # 用法：把这个仓库 clone 到本地盘（例如 /root/comp0190-organ-completion），
 # cd 进去之后跑 `bash setup_env.sh`。
 #
-# 背景 / 踩过的坑（详见 requirements.txt 里的注释）：
-#   - venv 建在网络盘（/workspace）上装包极慢（几十个包能装 10+ 分钟），所以这次
-#     venv 建在本地盘（脚本自己所在目录下的 .venv），本地盘在同一个 pod 内重启不会丢，
-#     只有换新 pod 才会清空 —— 换新 pod 就重新跑一遍这个脚本即可，很快。
-#   - 必须用 Python 3.11，不能用系统默认的 3.12：PyPI 上 tensorflow<2.16 没有
-#     cp312 的 wheel，而 transformers>=5 又彻底砍掉了 TFBertModel（MSN demo 依赖它），
-#     两者要求互斥，只有 3.11 能同时满足。
-#   - tensorflow[and-cuda] 和 torch 都会装 nvidia-nccl，但 nvidia-nccl-cu12/cu13
-#     两个包会装到同一个物理路径 site-packages/nvidia/nccl/，后装的覆盖先装的，
-#     导致 torch 报 "undefined symbol: ncclCommResume"。装完后必须强制重装回
-#     nvidia-nccl-cu13 才能让 torch 恢复（单卡场景不需要真正的 nccl）。
-#   - data/ 和权重文件（MSN_weights3.h5，1.1G）体积大又不好重新获取，留在 /workspace
-#     持久盘上，本地盘这边用软链接指过去，代码里的相对路径完全不用改。
-#   - git 身份信息要软链 ~/.gitconfig 到 /workspace/.gitconfig，不然 VS Code 自带的
-#     Git 面板（不会执行这个脚本的独立进程）读不到，报 "no email was given"。
+# 建两个独立的 conda 环境：
+#   comp0190        —— 主项目环境（torch + 常规科学计算库），日常用这个
+#   comp0190-msn    —— 只给 notebooks/demo/ 里那两个 MSN (PCT+BERT) demo notebook 用
+# 拆成两个环境是因为 tensorflow[and-cuda] 和 torch 各自的 nvidia-nccl 包
+# （cu12 / cu13）会装到同一个物理路径互相覆盖，导致 torch 报
+# "undefined symbol: ncclCommResume"。分开环境后两者不会再共享同一套
+# site-packages，这个问题从根上就不会出现，不需要额外修复步骤。
+#
+# 背景：本地盘（/root 等，容器 overlay）在同一个 pod 重启/关机重开时是保留的，
+# 只有换到新 pod（重新拉镜像）才会清空——这个脚本就是给"换新 pod"准备的。
 
 set -e
 
@@ -59,40 +54,52 @@ else
     echo "配置完之后手动: cp ~/.gitconfig /workspace/.gitconfig 做一份持久备份"
 fi
 
-# ---- 3. 建 Python 3.11 venv（本地盘）----
-if ! command -v python3.11 &> /dev/null; then
-    echo "python3.11 不存在，尝试用 apt 安装..."
-    apt-get update -qq && apt-get install -y -qq python3.11 python3.11-venv
+# ---- 3. 装 miniconda（如果没有）----
+CONDA_ROOT="${CONDA_ROOT:-/root/miniconda3}"
+if ! command -v conda &> /dev/null && [ ! -f "$CONDA_ROOT/etc/profile.d/conda.sh" ]; then
+    echo "=== 安装 miniconda 到 $CONDA_ROOT ==="
+    curl -sL -o /tmp/miniconda.sh https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
+    bash /tmp/miniconda.sh -b -p "$CONDA_ROOT"
+    rm /tmp/miniconda.sh
 fi
-
-if [ ! -d "$PROJECT_ROOT/.venv" ]; then
-    python3.11 -m venv "$PROJECT_ROOT/.venv"
-    echo "已建 venv: $PROJECT_ROOT/.venv"
-fi
+source "$CONDA_ROOT/etc/profile.d/conda.sh"
 
 # pip 缓存放持久盘，换新 pod 也能省下重新下载 torch/tensorflow 的时间
 export PIP_CACHE_DIR=/workspace/.cache/pip
 
-# ---- 4. 装依赖 ----
-"$PROJECT_ROOT/.venv/bin/pip" install --upgrade pip ipykernel -r "$PROJECT_ROOT/requirements.txt" \
-    --extra-index-url https://download.pytorch.org/whl/cu128
-
-# 修复 nvidia-nccl-cu12/cu13 共享安装路径导致 torch 被覆盖的问题
-"$PROJECT_ROOT/.venv/bin/pip" install --force-reinstall --no-deps "nvidia-nccl-cu13==2.29.7"
-
-# ---- 5. 注册 Jupyter kernel ----
-"$PROJECT_ROOT/.venv/bin/python" -m ipykernel install --user --name comp0190-venv \
-    --display-name "comp0190 (.venv)"
-
-# ---- 6. 验证 ----
-echo "=== 验证 ==="
-"$PROJECT_ROOT/.venv/bin/python" -c "
+# ---- 4. 主项目环境：comp0190（torch）----
+if ! conda env list | grep -q "^comp0190 "; then
+    conda create -y -n comp0190 python=3.11
+fi
+conda activate comp0190
+pip install --upgrade pip ipykernel
+pip install -r "$PROJECT_ROOT/requirements.txt" --extra-index-url https://download.pytorch.org/whl/cu128
+python -m ipykernel install --user --name comp0190 --display-name "comp0190 (conda)"
+echo "=== 验证 comp0190（torch）==="
+python -c "
 import torch
 print('torch', torch.__version__, 'cuda:', torch.cuda.is_available())
+"
+conda deactivate
+
+# ---- 5. MSN demo 环境：comp0190-msn（tensorflow）----
+if ! conda env list | grep -q "^comp0190-msn "; then
+    conda create -y -n comp0190-msn python=3.11
+fi
+conda activate comp0190-msn
+pip install --upgrade pip ipykernel
+pip install -r "$PROJECT_ROOT/requirements-msn.txt"
+python -m ipykernel install --user --name comp0190-msn --display-name "comp0190-msn (conda)"
+echo "=== 验证 comp0190-msn（tensorflow + TFBertModel）==="
+python -c "
 import tensorflow as tf
 print('tensorflow', tf.__version__, 'GPUs:', tf.config.list_physical_devices('GPU'))
 from transformers import TFBertModel, BertTokenizer
 print('TFBertModel import: OK')
 "
+conda deactivate
 
-echo "=== 完成，VS Code / Jupyter 里选 kernel: comp0190 (.venv) ==="
+echo ""
+echo "=== 完成 ==="
+echo "主项目开发：VS Code / Jupyter 里选 kernel comp0190 (conda)"
+echo "跑 MSN demo notebook：选 kernel comp0190-msn (conda)"
