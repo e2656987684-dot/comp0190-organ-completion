@@ -229,4 +229,5 @@ data/
 *.npy
 *.pth
 *.ckpt
+*.h5
 experiments/
