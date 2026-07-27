@@ -11,10 +11,17 @@
 #     跟这里 numpy<2 的要求冲突。
 #   - transformers 必须 <5：5.0 开始彻底砍掉了 TensorFlow 后端（TFBertModel 等）。
 #   - [and-cuda] extra 让 tensorflow 自带匹配的 CUDA 12 库，否则找不到 GPU。
+#   - hf_transfer：这台机器全局开了 HF_HUB_ENABLE_HF_TRANSFER=1（加速 HuggingFace
+#     下载），不装这个包的话 TFBertModel.from_pretrained 会直接报错退出。
 numpy<2
 trimesh
 pynrrd
 plotly
 fpsample
+matplotlib
 tensorflow[and-cuda]<2.16
 transformers<5
+kaleido
+hf_transfer
+nbformat>=4.2.0
+pandas
