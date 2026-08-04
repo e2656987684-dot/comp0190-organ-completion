@@ -218,7 +218,10 @@ __marimo__/
 .streamlit/secrets.toml
 
 # 数据与大文件，绝不上传
-data/
+# 注意：必须带开头的 /，否则这条规则会匹配任意深度的 data/ 目录（比如
+# src/data/），把该目录下本该提交的源码文件也一起忽略掉——prepare_skullfix.py
+# 上次丢失就是因为这个。
+/data/
 *.stl
 *.nrrd
 *.nii
