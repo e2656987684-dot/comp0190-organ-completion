@@ -24,6 +24,20 @@ export PIP_CACHE_DIR=/root/.cache/pip
 export HF_HOME=/root/.cache/huggingface
 mkdir -p "$PIP_CACHE_DIR" "$HF_HOME"
 
+# Claude Code 会话记录 + 登录凭证默认存在本地盘 ~/.claude，机器一销毁就没了。
+# 改成指向 /workspace 网络持久盘，重开机器后聊天记录还在、也不用重新登录，
+# 可以直接用 `claude --continue` / `claude --resume` 接着之前的会话聊。
+export CLAUDE_CONFIG_DIR=/workspace/.claude-config
+mkdir -p "$CLAUDE_CONFIG_DIR"
+if ! grep -q "CLAUDE_CONFIG_DIR" "$HOME/.bashrc" 2>/dev/null; then
+    {
+        echo ""
+        echo "# Claude Code 会话记录持久化：指向 /workspace 网络盘，机器重开后聊天记录/登录状态都还在"
+        echo "export CLAUDE_CONFIG_DIR=/workspace/.claude-config"
+    } >> "$HOME/.bashrc"
+    echo "已写入 CLAUDE_CONFIG_DIR 到 ~/.bashrc"
+fi
+
 # ---- 1. git 身份信息（新机器没配过的话自动配一次，不覆盖已有配置）----
 if [ -z "$(git config --global user.name 2>/dev/null)" ]; then
     git config --global user.name "jinyu qi"
