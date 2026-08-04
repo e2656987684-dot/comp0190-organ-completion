@@ -1,8 +1,10 @@
-# 只给 notebooks/demo/ 里那两个 MSN (PCT + BERT 多模态点云自编码器) demo notebook 用。
-# 单独拆出来、用独立 conda 环境装，是为了跟主项目的 torch 环境彻底隔离——
-# 之前在同一个环境里同时装 tensorflow[and-cuda] 和 torch，两边的 nvidia-nccl
-# 包（cu12 / cu13）会装到同一个物理路径互相覆盖，导致 torch 崩掉。分开环境后
-# 这个问题不会再出现，也不需要额外的 nccl 修复步骤。
+# 现在是本项目唯一用的环境（comp0190-msn），覆盖：notebooks/explore_skull.ipynb、
+# src/data/prepare_skullfix.py，以及 notebooks/demo/ 里那两个 MSN
+# (PCT + BERT 多模态点云自编码器) demo notebook。
+# 曾经跟一个额外的 comp0190（torch）环境分开装，是为了跟 torch 彻底隔离——
+# 同一个环境里同时装 tensorflow[and-cuda] 和 torch，两边的 nvidia-nccl
+# 包（cu12 / cu13）会装到同一个物理路径互相覆盖，导致 torch 崩掉。当前代码库
+# 完全没有用到 torch，那个环境已删除；以后真要接回 torch 记得重新拆分。
 #
 # 版本限制的原因：
 #   - Python 必须是 3.11：PyPI 上 tensorflow<2.16 没有 cp312 wheel。
@@ -19,6 +21,8 @@ pynrrd
 plotly
 fpsample
 matplotlib
+scikit-image
+ipywidgets
 tensorflow[and-cuda]<2.16
 transformers<5
 kaleido

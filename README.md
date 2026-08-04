@@ -20,16 +20,11 @@ notebooks/       Colab / Jupyter notebooks
 ```
 
 ## Setup
-```bash
-python -m venv .venv
-source .venv/bin/activate        # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-```
-
-On a fresh GPU pod, `bash setup_env.sh` sets up conda environments instead (see
-comments in that file): `comp0190` (torch, main project work) and `comp0190-msn`
-(tensorflow, only for the legacy MSN demo notebooks under `notebooks/demo/`,
-kept in a separate environment so its TF/CUDA deps never collide with torch's).
+On a fresh GPU pod, `bash setup_env.sh` sets up a conda environment
+(`comp0190-msn`, see comments in that file) covering everything the current
+code needs: `notebooks/explore_skull.ipynb`, `src/data/prepare_skullfix.py`,
+and the MSN demo notebooks under `notebooks/demo/`. Dependencies are pinned in
+`requirements-msn.txt`.
 
 ## Data
 Data is NOT stored in this repo (see .gitignore). It lives on Google Drive / UCL HPC.

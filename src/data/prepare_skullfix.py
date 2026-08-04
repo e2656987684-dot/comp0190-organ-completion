@@ -14,9 +14,9 @@ Raw layout (see notebooks/explore_skull.ipynb):
     data/14161307/SkullFix/training_set/defective_skull/*.nrrd
   paired by filename, e.g. 000.nrrd <-> 000.nrrd, 100 pairs total.
 
-Must run in the `comp0190` conda env (needs scikit-image); `comp0190-msn`
-does not have it:
-    /root/miniconda3/envs/comp0190/bin/python src/data/prepare_skullfix.py \
+Run in the `comp0190-msn` conda env (has scikit-image + everything else this
+needs; the old `comp0190` env this used to require has been removed):
+    /root/miniconda3/envs/comp0190-msn/bin/python src/data/prepare_skullfix.py \
         --n-samples 0 --n-dense 16384 --n-in 4096 --n-out 6144 --workers 12 \
         --out data/cache/skullfix_pairs_4096_6144.npz
 

@@ -1,16 +1,18 @@
 #!/bin/bash
 # ===== 一键环境搭建脚本（conda 版，单盘部署，不依赖持久盘）=====
 # 用法：clone 仓库后 cd 进去，跑 `bash setup_env.sh`。
-# 所有东西（conda、两个虚拟环境、MSN 权重）都直接装在当前所在的盘上，
+# 所有东西（conda、虚拟环境、MSN 权重）都直接装在当前所在的盘上，
 # 不做任何 /workspace 持久盘的软链或路径判断。
 #
-# 建两个独立的 conda 环境：
-#   comp0190        —— 主项目环境（torch + 常规科学计算库），日常用这个
-#   comp0190-msn    —— 只给 notebooks/demo/ 里那两个 MSN (PCT+BERT) demo notebook 用
-# 拆成两个环境是因为 tensorflow[and-cuda] 和 torch 各自的 nvidia-nccl 包
-# （cu12 / cu13）会装到同一个物理路径互相覆盖，导致 torch 报
-# "undefined symbol: ncclCommResume"。分开环境后两者不会再共享同一套
-# site-packages，这个问题从根上就不会出现，不需要额外修复步骤。
+# 只建一个 conda 环境：
+#   comp0190-msn    —— 覆盖全部当前代码：explore_skull.ipynb、
+#                       src/data/prepare_skullfix.py，以及 notebooks/demo/
+#                       下那两个 MSN (PCT+BERT) demo notebook。
+# 曾经拆过一个额外的 comp0190（torch）环境，纯粹是为将来 torch 相关代码
+# 预留、跟 tensorflow[and-cuda] 的 nvidia-nccl 包（cu12/cu13）互相隔离用的
+# ——但当前代码库里没有任何地方真的 import torch，那个环境已删除。如果
+# 以后真的要接入 torch，记得重新拆成独立环境，避免两者的 nccl 包装到同一
+# 物理路径互相覆盖，导致 "undefined symbol: ncclCommResume"。
 
 set -e
 
@@ -85,28 +87,12 @@ source "$CONDA_ROOT/etc/profile.d/conda.sh"
 conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main > /dev/null 2>&1 || true
 conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r > /dev/null 2>&1 || true
 
-# 让新开的 shell（不 source 这个脚本的情况下）也能直接用 conda / 看到这两个环境
+# 让新开的 shell（不 source 这个脚本的情况下）也能直接用 conda / 看到这个环境
 if ! grep -q "conda initialize" "$HOME/.bashrc" 2>/dev/null; then
     "$CONDA_ROOT/bin/conda" init bash > /dev/null
 fi
 
-# ---- 4. 主项目环境：comp0190（torch）----
-if ! conda env list | grep -q "^comp0190 "; then
-    conda create -y -n comp0190 python=3.11
-fi
-conda activate comp0190
-pip install --upgrade pip ipykernel
-pip install -r "$PROJECT_ROOT/requirements.txt" --extra-index-url https://download.pytorch.org/whl/cu128
-python -m ipykernel install --user --name comp0190 --display-name "comp0190 (conda)" \
-    --env PIP_CACHE_DIR "$PIP_CACHE_DIR"
-echo "=== 验证 comp0190（torch）==="
-python -c "
-import torch
-print('torch', torch.__version__, 'cuda:', torch.cuda.is_available())
-"
-conda deactivate
-
-# ---- 5. MSN demo 环境：comp0190-msn（tensorflow）----
+# ---- 4. 项目环境：comp0190-msn（tensorflow + 常规科学计算库）----
 if ! conda env list | grep -q "^comp0190-msn "; then
     conda create -y -n comp0190-msn python=3.11
 fi
@@ -127,6 +113,5 @@ conda deactivate
 echo ""
 echo "=== 完成 ==="
 echo "MSN 权重: $WEIGHTS_FILE（已软链到 notebooks/demo/MSN_weights3.h5）"
-echo "主项目开发：VS Code / Jupyter 里选 kernel comp0190 (conda)"
-echo "跑 MSN demo notebook：选 kernel comp0190-msn (conda)"
+echo "所有 notebook / 脚本统一选 kernel comp0190-msn (conda)"
 echo "如果 conda 命令在新终端里还是找不到，重开一个终端或者 source ~/.bashrc 一次"
