@@ -26,19 +26,37 @@ export PIP_CACHE_DIR=/root/.cache/pip
 export HF_HOME=/root/.cache/huggingface
 mkdir -p "$PIP_CACHE_DIR" "$HF_HOME"
 
-# Claude Code 会话记录 + 登录凭证默认存在本地盘 ~/.claude，机器一销毁就没了。
-# 改成指向 /workspace 网络持久盘，重开机器后聊天记录还在、也不用重新登录，
-# 可以直接用 `claude --continue` / `claude --resume` 接着之前的会话聊。
-export CLAUDE_CONFIG_DIR=/workspace/.claude-config
+# Claude Code 会话记录 + 登录凭证默认存在本地盘 ~/.claude（以及 ~/.claude.json），
+# 机器一销毁就没了。这里把这两个路径本身换成指向 /workspace 网络持久盘的软链接，
+# 这样不管 claude 进程是被谁、怎么拉起来的（VS Code 插件走的是 extension host
+# 链路，不会 source ~/.bashrc，之前用 CLAUDE_CONFIG_DIR 环境变量的方案在这种
+# 场景下不生效——曾经因为这个在换新机器时丢过一次聊天记录），只要它按默认路径
+# 读写 ~/.claude*，都会透明落到网络盘上。
+# 幂等：已经是软链接就跳过；本地是真目录/文件就搬过去再建软链（网络盘上已有
+# 数据 —— 比如换了个新 pod —— 就直接复用，不覆盖）。
+CLAUDE_CONFIG_DIR=/workspace/.claude-config
 mkdir -p "$CLAUDE_CONFIG_DIR"
-if ! grep -q "CLAUDE_CONFIG_DIR" "$HOME/.bashrc" 2>/dev/null; then
-    {
-        echo ""
-        echo "# Claude Code 会话记录持久化：指向 /workspace 网络盘，机器重开后聊天记录/登录状态都还在"
-        echo "export CLAUDE_CONFIG_DIR=/workspace/.claude-config"
-    } >> "$HOME/.bashrc"
-    echo "已写入 CLAUDE_CONFIG_DIR 到 ~/.bashrc"
-fi
+
+_link_claude_path() {
+    local target="$1" link_name="$2"
+    if [ -L "$link_name" ]; then
+        return  # 已经是软链接，跳过
+    fi
+    if [ -e "$link_name" ]; then
+        if [ -e "$target" ]; then
+            # 网络盘上已有数据（比如新 pod 上跑这个脚本）：本地的当备份，不覆盖网络盘
+            mv "$link_name" "${link_name}.local-backup"
+        else
+            mv "$link_name" "$target"
+        fi
+    fi
+    ln -s "$target" "$link_name"
+}
+
+_link_claude_path "$CLAUDE_CONFIG_DIR" "$HOME/.claude"
+_link_claude_path "$CLAUDE_CONFIG_DIR/.claude.json" "$HOME/.claude.json"
+unset -f _link_claude_path
+echo "已确认 ~/.claude 和 ~/.claude.json 指向 $CLAUDE_CONFIG_DIR"
 
 # ---- 1. git 身份信息（新机器没配过的话自动配一次，不覆盖已有配置）----
 if [ -z "$(git config --global user.name 2>/dev/null)" ]; then
