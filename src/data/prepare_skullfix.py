@@ -17,8 +17,14 @@ Raw layout (see notebooks/explore_skull.ipynb):
 Run in the `comp0190-msn` conda env (has scikit-image + everything else this
 needs; the old `comp0190` env this used to require has been removed):
     /root/miniconda3/envs/comp0190-msn/bin/python src/data/prepare_skullfix.py \
-        --n-samples 0 --n-dense 16384 --n-in 4096 --n-out 6144 --workers 12 \
+        --n-samples 0 --n-dense 16384 --n-in 4096 --n-out 6144 --workers 8 \
         --out data/cache/skullfix_pairs_4096_6144.npz
+
+On --workers: this job is memory-bandwidth bound, not compute bound, so it
+stops scaling early. Measured on 24 pairs (see devlog 2026-08-05): 6.9s/pair
+solo, but 3.9s/pair at 4 workers, 3.1s at 8, 3.4s at 12, 4.6s at 24 -- i.e. 12
+is slower than 8 and 24 is slower than 4, and the whole 24-core box tops out at
+~2.3x. 8 is the measured optimum; going wider only adds memory pressure.
 
 Two fixes over the naive per-file approach in explore_skull.ipynb's
 `nrrd_to_point_cloud`:
@@ -140,7 +146,19 @@ def main():
                       args.level, args.seed + i))
 
     ids, inputs, gts, scales, failed = [], [], [], [], []
-    with Pool(args.workers) as pool:
+    # maxtasksperchild=1: restart each worker after every pair. Without it a
+    # worker's RSS only ever grows -- each pair transiently allocates the 248 MB
+    # int32 volume plus a ~1.1M-vertex / 2.3M-face mesh, and glibc does not
+    # return the freed heap to the OS. Measured mid-run (devlog 2026-08-05):
+    # the two oldest workers had reached 7.2 and 7.5 GB while a freshly spawned
+    # one sat at 3 MB, RSS increasing strictly with worker age. Against this
+    # container's 42.8 GiB cgroup limit (NOT the 187 GiB `free` reports -- that
+    # is the host) 8 such workers cannot all survive, so they were being
+    # OOM-killed and silently respawned by Pool, and imap then waited forever on
+    # the results that died with them. Restarting per task pins peak usage at
+    # one pair's working set per worker; the extra spawn costs ~0.2s against a
+    # ~2-3s task.
+    with Pool(args.workers, maxtasksperchild=1) as pool:
         for sid, inp, gt, scale, err in tqdm(pool.imap(process_one, tasks), total=len(tasks),
                                               desc="prepare_skullfix"):
             if err is not None:
