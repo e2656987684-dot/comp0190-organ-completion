@@ -46,9 +46,22 @@ SIZING
   8 still OOMs at 24 GB.
 
   `MSNConfig.small()` is a ~20x cheaper 9.4M-parameter variant (2048 in /
-  1536 out, 25 ms/step, 0.9 GiB) for debugging the pipeline. Because the decoder
-  seed size is baked into the `D1-IN` / `D2-IN` weight shapes, `small()` cannot
-  load msn_downloads/MSN_weights3.h5; `paper()` can.
+  1536 out, 25 ms/step, 0.9 GiB) for debugging the pipeline.
+
+  NEITHER config can load msn_downloads/MSN_weights3.h5. An earlier version of
+  this docstring claimed `paper()` could -- that was wrong, and wrong in the
+  worst way, because the failure is silent: `load_weights(by_name=True,
+  skip_mismatch=True)` returns without raising while matching only 3 of the
+  checkpoint's 32 weight groups (`D-OUT_lin`, `D1-IN`, `D2-IN`), leaving ~96% of
+  the network randomly initialised. Shapes are compatible; the layer NESTING is
+  not. The demo wraps each Dense+ReLU in a nested Model, so the checkpoint holds
+  `E-IN_LBR1/E-IN_LBR1_lin/kernel`, while `LBR` here emits a top-level Dense
+  named `E-IN_LBR1_lin` and looks for `E-IN_LBR1_lin/kernel`. Attention blocks
+  differ likewise (`E-SA1` as one group vs `E-SA1_Q`/`_K`/`_V`).
+
+  To run the published weights use `msn_demo_arch.py`, which is that topology
+  lifted verbatim and does load them strictly. Keep the two modules separate:
+  this one for models trained by this project, that one for the vendor weights.
 
 LOSS
   Do NOT train from scratch with DCD alone -- see the warning on `dcd_loss`. Use

@@ -122,3 +122,36 @@
   worker 场景快 1.6 倍，且精度损失已验证等同于采样噪声地板）**按用户要求不加**，
   保持现在的 step_size=1 / int32 路径不变。
 - 卡点：卡死的那个进程组需要手动 kill（Claude 这边执行 kill 被权限策略拦下了）。
+
+## 2026-08-05（预训练权重基线：新建 notebook + 一个静默失败的坑）
+- 目标：把作者发布的 `MSN_weights3.h5` 在**已修复对齐**的数据上重跑一遍，
+  作为和本项目从零训练结果对比的基线。
+- 踩到并修正的一个错误判断（重要）：我先前建议"把预训练权重加载进
+  `msn_skullfix.py` 的 `paper()`，两边走同一套代码"，**这是错的**。实测：
+  `paper()` 与 `MSN_weights3.h5` 只有 3 个权重组能按名字匹配上
+  （`D-OUT_lin`/`D1-IN`/`D2-IN`，共 32 组），而且
+  `load_weights(by_name=True, skip_mismatch=True)` **不报错就返回** ——
+  约 96% 的网络仍是随机初始化，会安静地产出垃圾预测。
+  根因是层嵌套方式不同、不是形状不同：demo 的 `LBR` 把 Dense+ReLU 包在名为
+  `E-IN_LBR1` 的嵌套 Model 里（存成 `E-IN_LBR1/E-IN_LBR1_lin/kernel`），
+  重写版是顶层裸 Dense `E-IN_LBR1_lin`（找 `E-IN_LBR1_lin/kernel`），
+  `by_name` 匹配不了。注意力块同理（`E-SA1` vs `E-SA1_Q/_K/_V`）。
+  `msn_skullfix.py` docstring 里"paper() can load MSN_weights3.h5"那句话
+  需要更正，目前先在 `msn_demo_arch.py` 的 docstring 里写清楚了。
+- 做了：
+  - 新增 `src/models/msn_demo_arch.py`：把 demo notebook 的架构定义
+    （cells 4/6/8/10/12）**逐字**抽出来成模块。验证过它能以**严格模式**
+    （不传 by_name / skip_mismatch）加载 `MSN_weights3.h5`，40/40 权重张量确实被改写。
+    这个文件里的层名是有语义的，不要"顺手清理"。
+  - 新增 `notebooks/MSN_baseline_pretrained.ipynb`：读已对齐的 `.npz`
+    （不再碰 `.ply`，也**不再调 `normalize_point_cloud`**）、只评估训练时那
+    20 颗验证集颅骨、指标乘各自的 `scale_mm` 出毫米、内置权重加载自检。
+  - 更新 README 的仓库结构说明（原来那份是最初的骨架规划，和现状对不上），
+    补了"两条数据路线（.npz vs .ply）分别是什么、该用哪条"的对照表。
+- 结果（冒烟测试，3 颗验证颅骨）：预训练权重 CD_t 约 9.7 / 10.1 / 11.1 mm，
+  本项目从零训练是 7.08 mm。完整 20 颗的数字要跑完 notebook 才有。
+- 待确认：`MSN_weights3.h5` 训练时是否见过颅骨类数据。这决定了对比表里该写
+  "zero-shot 迁移"还是别的表述，写进论文前必须查证原作者说明。
+- 已知未解决：demo 的 `UniformSampler` 是有状态随机抽样，同一输入两次调用输出
+  会有差异（训练 notebook 实测 1.03）。基线 notebook 里固定了全局种子，但要
+  完全逐位可复现需要改成 stateless 抽样 —— 那属于改动 demo 架构，没做。

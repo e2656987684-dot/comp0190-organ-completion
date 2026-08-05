@@ -7,9 +7,14 @@
 约定：每次值得留档的训练，在这里建一个和 `--run-name` 同名的子目录，
 只放 `run.json` + `history.csv`。
 
-| run | 说明 | best val CD_t | epochs |
+| run | 说明 | val CD_t | epochs |
 |---|---|---:|---:|
 | `baseline_es20` | 100 对数据 + EarlyStopping(patience=20) 首次完整跑通。<br>单次 80/20 划分（seed 42），未做 k-fold，无正则化。 | **7.08 mm** | 133（最优在 112） |
+| `pretrained_baseline` | 对照组：作者发布的 `MSN_weights3.h5` 直接推理，<br>不在颅骨上训练。由 `notebooks/MSN_baseline_pretrained.ipynb` 产出。 | 见 CSV | — |
+
+两者评估的是**同一批 20 颗验证颅骨**、同一套指标定义（`msn_skullfix.calc_cd`）、
+同一份已对齐的 `.npz` 数据，所以可以直接对比。注意这个对照的性质是
+"预训练权重直接应用于颅骨" vs "在颅骨上从零训练"，不是同任务下两个方法的较量。
 
 ## 复现说明
 

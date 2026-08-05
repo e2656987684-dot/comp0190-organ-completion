@@ -9,15 +9,62 @@ completion under a self-built, controlled corruption dataset.
   baseline vs one geometry-aware method under one unified evaluation framework.
 
 ## Repo structure
+
+Only the paths marked ● actually hold code today; the rest are placeholders
+from the initial skeleton, kept because the project plan still points at them.
+
 ```
-src/data/        data loading + conversion to canonical form (mesh / point cloud / voxel)
-src/corruption/  self-built, parameterised corruption operators
-src/models/      voxel baseline + geometry-aware model
-src/eval/        Chamfer / Hausdorff / MSD / Dice metrics
-configs/         config files + fixed random seeds
-experiments/     outputs (git-ignored)
-notebooks/       Colab / Jupyter notebooks
+src/data/
+  ● prepare_skullfix.py    raw nrrd -> aligned point-cloud pairs -> data/cache/*.npz
+                           (this is THE data path; the .ply files under data/ are
+                            an older, superseded route -- see "Two data routes")
+src/models/
+  ● msn_skullfix.py        the reworked MSN network + losses/metrics. Used for
+                           TRAINING THIS PROJECT'S OWN MODEL.
+  ● train_skullfix.py      training CLI (early stopping, k-fold, --run-name)
+  ● msn_demo_arch.py       the published demo architecture, lifted verbatim.
+                           Used ONLY to run the author's pretrained weights.
+                           ⚠ the two model modules are NOT weight-compatible
+                             with each other -- see the note in that file.
+src/corruption/            (placeholder) self-built corruption operators
+src/eval/                  (placeholder) Chamfer / Hausdorff / MSD / Dice
+configs/                   (placeholder) config files + fixed seeds
+
+notebooks/
+  ● explore_skull.ipynb            first-look + the older .ply batch conversion
+  ● MSN_baseline_pretrained.ipynb  BASELINE: author's weights on aligned data
+  demo/
+    ● MSN_train_skullfix.ipynb     MAIN: train this project's model + evaluate
+    MSN_model_inference_demo.ipynb  original vendor demo (superseded -- its
+                                    eval re-breaks pair alignment, see the
+                                    baseline notebook's intro for the measurement)
+    MSN_model_training_Demo.ipynb   original vendor demo (superseded)
+    progress_report/                slides / figures for the progress report
+
+data/                      git-ignored. raw nrrd + data/cache/*.npz
+msn_downloads/             git-ignored. MSN_weights3.h5 (author's pretrained weights)
+experiments/               git-ignored. training artifacts, one dir per run
+experiments_log/           TRACKED. run.json + history.csv only (small), so the
+                           numbers survive even though the weights do not.
 ```
+
+### Two data routes (why there are two, and which to use)
+
+| route | produced by | contains | use it? |
+|---|---|---|---|
+| `data/cache/*.npz` | `src/data/prepare_skullfix.py` | aligned pairs, 4096 in / 6144 gt, **`scale_mm`** | **yes** — this is what training and the baseline both read |
+| `data/.../point_clouds/*.ply` | `explore_skull.ipynb` | aligned pairs, 8192 pts, no `scale_mm` | superseded; kept for the visual exploration cells |
+
+Both apply the same two fixes (pair alignment + anisotropic voxel spacing), but
+only the `.npz` route carries `scale_mm`, without which metrics cannot be
+converted to millimetres and are therefore not comparable across runs.
+
+### Where the numbers live
+
+`experiments_log/<run-name>/` holds `run.json` (hyper-parameters, the exact
+train/val id split, final metrics) and `history.csv` (per-epoch curves) for each
+run worth keeping. Git tags mark the matching code state, e.g.
+`git diff baseline-7.08mm` shows what changed since that result was produced.
 
 ## Setup
 On a fresh GPU pod, `bash setup_env.sh` sets up a conda environment
