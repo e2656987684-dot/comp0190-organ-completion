@@ -69,6 +69,10 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# Kept equal to eval.mesh_viz.CLUMP_MM so the per-epoch clump_metric and the
+# after-the-fact surface-quality numbers mean the same thing.
+CLUMP_MM = 2.0
+
 
 def parse_args():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -111,6 +115,25 @@ def parse_args():
                          "specifically, where --dcd-weight scales DCD's distance and density "
                          "factors together. The more targeted knob for the 11.2%%-of-points-"
                          "within-2mm problem (ground truth is 0.0%%).")
+    ap.add_argument("--repulsion-weight", type=float, default=0.0,
+                    help="0 = off (default, identical to previous behaviour). Adds a hinge "
+                         "penalty on predicted points closer than --repulsion-r0 to each "
+                         "other. This is the one term that can actually push points apart: "
+                         "DCD's density factor comes from argmin and has zero gradient "
+                         "w.r.t. position, so it cannot. Start small (0.1-1) and watch that "
+                         "cd_t does not rise -- repulsion knows nothing about the surface, "
+                         "so too much of it inflates the cloud.")
+    ap.add_argument("--repulsion-r0", type=float, default=2.0,
+                    help="target minimum spacing in MILLIMETRES, converted to normalised "
+                         "units with this dataset's mean scale_mm. Measured ground truth "
+                         "spacing has a hard floor at 3.0mm (it is farthest-point sampled), "
+                         "so 3.0 is the value that actually matches GT; 2.0 is the "
+                         "conservative default because it matches the existing 'clump<2mm' "
+                         "metric and disturbs far fewer points.")
+    ap.add_argument("--repulsion-k", type=int, default=4,
+                    help="how many nearest neighbours each point is repelled from. k=1 "
+                         "tracks the clump metric most directly but oscillates as the "
+                         "nearest neighbour keeps changing; 4 is steadier.")
     ap.add_argument("--val-frac", type=float, default=0.2,
                     help="used only when --n-folds is 0 (single random split)")
     ap.add_argument("--n-folds", type=int, default=0,
@@ -242,10 +265,20 @@ def main():
     # not overfit (val/train CD_t 1.03-1.08x on every run), so there is nothing for
     # a regulariser to fix. See the 2026-08-06 devlog entry.
     optimizer = tf.keras.optimizers.Adam(learning_rate=args.lr, clipnorm=1.0)
+    # The losses run in normalised coordinates, so the mm thresholds are divided
+    # by this dataset's mean radius. Per-skull radii span 88.3-133.1 mm, so the
+    # effective threshold varies ~+-20% across samples; that is noise, not bias.
+    clump_thresh_norm = CLUMP_MM / scale_mm
+    repulsion_r0_norm = args.repulsion_r0 / scale_mm
+    clump_metric = msn.make_clump_metric(clump_thresh_norm)
+
     model.compile(optimizer=optimizer,
                   loss=msn.make_loss(args.loss, dcd_weight=args.dcd_weight,
-                                     n_lambda=args.dcd_lambda),
-                  metrics=[msn.cd_t_metric, msn.cd_p_metric, msn.dcd_metric])
+                                     n_lambda=args.dcd_lambda,
+                                     repulsion_weight=args.repulsion_weight,
+                                     repulsion_r0=repulsion_r0_norm,
+                                     repulsion_k=args.repulsion_k),
+                  metrics=[msn.cd_t_metric, msn.cd_p_metric, msn.dcd_metric, clump_metric])
 
     print(f"\nconfig={args.config}  params={model.count_params() / 1e6:.1f}M  "
           f"in={cfg.n_in} out={cfg.n_out}")
@@ -253,6 +286,11 @@ def main():
           f"(ids {', '.join(ids[val_idx][:5])}{'...' if n_val > 5 else ''})")
     if args.loss == "cd_dcd":
         print(f"dcd_weight={args.dcd_weight:g}  dcd_lambda={args.dcd_lambda:g}")
+    if args.repulsion_weight > 0:
+        print(f"repulsion w={args.repulsion_weight:g}  r0={args.repulsion_r0:g}mm "
+              f"(={repulsion_r0_norm:.5f} norm)  k={args.repulsion_k}")
+    else:
+        print("repulsion off")
     print(f"loss={args.loss}  lr={args.lr:g}  batch={args.batch_size}  "
           f"budget={args.minutes:g} min  scale={scale_mm:.1f} mm")
     if args.n_folds > 0:
@@ -301,6 +339,9 @@ def main():
         "n_folds": args.n_folds, "fold": args.fold if args.n_folds > 0 else None,
         "early_stop_patience": args.early_stop_patience,
         "loss": args.loss, "dcd_weight": args.dcd_weight, "dcd_lambda": args.dcd_lambda,
+        "repulsion_weight": args.repulsion_weight,
+        "repulsion_r0_mm": args.repulsion_r0, "repulsion_k": args.repulsion_k,
+        "clump_thresh_mm": CLUMP_MM,
         "epochs_run": len(history.history["loss"]),
         "scale_mm": scale_mm,
         "train_ids": ids[train_idx].tolist(), "val_ids": ids[val_idx].tolist(),

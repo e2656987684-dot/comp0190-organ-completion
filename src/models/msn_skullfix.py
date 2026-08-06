@@ -80,6 +80,10 @@ from tensorflow.keras import models as M
 
 EPS = 1e-12
 
+# Query points per block when selecting repulsion neighbours. Trades a few extra
+# kernel launches for peak memory; see `repulsion_loss`.
+_REPULSION_CHUNK = 1024
+
 
 # --------------------------------------------------------------------------- #
 # distances and losses
@@ -203,7 +207,85 @@ def cd_dcd_loss(y_true, y_pred, dcd_weight=1.0, n_lambda=1.0):
         y_pred, y_true, dist1, dist2, idx1, idx2, n_lambda=n_lambda)
 
 
-def make_loss(name, dcd_weight=1.0, n_lambda=1.0):
+def repulsion_loss(pred, r0, k=4):
+    """Hinge repulsion between predicted points. Nothing to do with the target.
+
+    WHY THIS EXISTS, given DCD is already the "density-aware" term: DCD's density
+    factor is `1/count^lambda` where `count` comes from `argmin`, a piecewise
+    constant function. Its gradient w.r.t. point positions is exactly zero --
+    measured, `tf.gradients` returns None for that path. So DCD can only reweight
+    Chamfer's gradients; it can never apply a force that pushes two predicted
+    points apart. Worse, two coincident predictions each matched by a different
+    ground-truth point have count=1 and draw no DCD penalty at all, which is the
+    dominant form of the clumping seen here. This loss supplies exactly the term
+    DCD structurally cannot.
+
+    Hinge rather than PU-Net's `-d*exp(-d^2/h^2)`: once points are `r0` apart the
+    gradient is exactly zero, so the term stops fighting Chamfer instead of
+    pushing forever with a decaying weight. And `r0` is a distance, so it can be
+    read off the ground truth rather than tuned blind -- measured GT nearest
+    neighbour spacing on this dataset has a hard floor at 3.0 mm (0.028% below
+    3 mm, 0% below 2 mm), because the GT is farthest-point sampled.
+
+    `r0` is in NORMALISED units. Each skull was divided by its own radius, and
+    those range 88.3-133.1 mm, so one fixed normalised r0 enforces 1.70-2.57 mm
+    depending on the skull. That spread is noise, not bias; if this direction
+    proves out, derive r0 per sample from the target's own spacing instead.
+    """
+    n = pred.shape[1]
+    # Neighbour SELECTION is chunked and gradient-free. A full (B,N,N) matrix is
+    # 604 MB at B=4/N=6144, and squared_distance_matrix needs a few copies of it;
+    # measured, doing it in one go costs +4.8 GiB of peak memory and OOMs a 24 GB
+    # card once the clump metric is also live. Chunking caps it at (B,chunk,N)
+    # while changing nothing about the result -- the differentiable part below
+    # only ever sees the (B,N,k,3) gathered neighbours.
+    idx_parts = []
+    for start in range(0, n, _REPULSION_CHUNK):
+        stop = min(start + _REPULSION_CHUNK, n)
+        blk = pred[:, start:stop]
+        d2 = tf.stop_gradient(squared_distance_matrix(blk, pred))   # (B,chunk,N)
+        # Push each query point's own column out of contention so it is never
+        # returned as its own neighbour.
+        self_mask = tf.one_hot(tf.range(start, stop), n, on_value=1e10, off_value=0.0)
+        _, idx_blk = tf.math.top_k(-(d2 + self_mask), k=k)
+        idx_parts.append(idx_blk)
+    idx = tf.concat(idx_parts, axis=1)                     # (B,N,k) nearest others
+    nb = tf.gather(pred, idx, batch_dims=1)                # (B,N,k,3)
+    # Distances recomputed on the selected pairs only, so the backward pass never
+    # touches the (B,N,N) matrix -- same two-stage trick as `_min_dists`.
+    d = tf.sqrt(tf.maximum(
+        tf.reduce_sum(tf.square(tf.expand_dims(pred, 2) - nb), axis=-1), EPS))
+    return tf.reduce_mean(tf.square(tf.maximum(0.0, r0 - d)))
+
+
+def make_clump_metric(thresh, n_sample=512):
+    """Fraction of predicted points whose nearest neighbour is closer than `thresh`.
+
+    This is the quantity repulsion targets, so it needs to be visible per epoch;
+    otherwise tuning is blind until the surface-quality notebook is run. Ground
+    truth scores exactly 0.0% here, which makes it a clean reference.
+
+    Subsampled to `n_sample` query points against all N: the exact version needs
+    an (N,N) matrix every step for a number that is only ever read by a human.
+    Sampling error is ~1/sqrt(n_sample) (~3% relative at 1024), far below the
+    epoch-to-epoch variation. `thresh` is in normalised units.
+    """
+    def clump_metric(y_true, y_pred):
+        pred = tf.cast(y_pred, tf.float32)
+        n = tf.shape(pred)[1]
+        sel = tf.random.shuffle(tf.range(n))[:n_sample]
+        sub = tf.gather(pred, sel, axis=1)                          # (B,S,3)
+        d2 = tf.stop_gradient(squared_distance_matrix(sub, pred))   # (B,S,N)
+        # top_k of -d2: [0] is the query point matching itself at 0, [1] is its
+        # nearest genuine neighbour.
+        vals, _ = tf.math.top_k(-d2, k=2)
+        nn = tf.sqrt(tf.maximum(-vals[:, :, 1], 0.0))
+        return tf.reduce_mean(tf.cast(nn < thresh, tf.float32))
+    return clump_metric
+
+
+def make_loss(name, dcd_weight=1.0, n_lambda=1.0,
+              repulsion_weight=0.0, repulsion_r0=0.0, repulsion_k=4):
     """Build a Keras-compatible loss, with DCD's two knobs exposed.
 
     dcd_weight scales the whole DCD term. Read it as a gradient share, not as a
@@ -226,19 +308,38 @@ def make_loss(name, dcd_weight=1.0, n_lambda=1.0):
     `1 - exp(-dist*alpha) * 1/count^n_lambda`, a product of both. If the goal is
     the 11.2%-of-points-within-2mm problem rather than accuracy in general,
     n_lambda is the more targeted knob of the two.
+
+    repulsion_weight adds `repulsion_loss` on top of whichever base loss `name`
+    selects, so the ablation that matters -- does DCD still earn its place once a
+    real repulsion term exists? -- is reachable as `--loss cd --repulsion-weight w`
+    versus `--loss cd_dcd --repulsion-weight w`. 0.0 (default) reproduces the
+    previous behaviour exactly.
     """
     if name == "cd":
-        return chamfer_loss
-    if name == "dcd":
-        return dcd_loss
-    if name != "cd_dcd":
+        base = chamfer_loss
+        tag = "cd"
+    elif name == "dcd":
+        base = dcd_loss
+        tag = "dcd"
+    elif name == "cd_dcd":
+        def base(y_true, y_pred):
+            return cd_dcd_loss(y_true, y_pred, dcd_weight=dcd_weight, n_lambda=n_lambda)
+        tag = f"cd_dcd_w{dcd_weight:g}_l{n_lambda:g}"
+    else:
         raise ValueError(f"unknown loss {name!r}; expected one of {sorted(LOSSES)}")
 
+    if repulsion_weight <= 0.0:
+        # Return the bare base loss rather than a wrapper that adds 0.0 -- keeps
+        # the graph (and any saved run) identical to before this feature existed.
+        base.__name__ = tag
+        return base
+
     def loss(y_true, y_pred):
-        return cd_dcd_loss(y_true, y_pred, dcd_weight=dcd_weight, n_lambda=n_lambda)
+        return base(y_true, y_pred) + repulsion_weight * repulsion_loss(
+            tf.cast(y_pred, tf.float32), repulsion_r0, repulsion_k)
 
     # Keras logs this name; keep the settings visible in history.csv headers.
-    loss.__name__ = f"cd_dcd_w{dcd_weight:g}_l{n_lambda:g}"
+    loss.__name__ = f"{tag}_rep{repulsion_weight:g}"
     return loss
 
 
