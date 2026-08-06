@@ -506,6 +506,46 @@ DCD 没有这个问题（同公式、同 α=1、同 [0,2] 范围），这也正�
 
 ---
 
+## 2026-08-06（范围决策：体素基线暂不做，基线改用原项目预训练权重）
+
+### 决策
+**体素基线（3D U-Net 之类）暂不做。** 当前工作的对照基线是
+**原 GitHub 项目（MedShapeNet Foundation Model）发布的预训练权重
+`MSN_weights3.h5` 在本项目颅骨数据上的推理结果**。
+
+| | 基线 | 本工作 |
+|---|---|---|
+| 来源 | 作者发布的 `MSN_weights3.h5` 直接推理 | 在 80 颗颅骨上从零训练 |
+| val CD_t | 10.71 mm | **6.945 mm**（`dcd_l2`） |
+| val DCD | 1.428 | **0.890** |
+| 产出 | `notebooks/MSN_baseline_pretrained.ipynb`<br>`experiments_log/pretrained_baseline/eval_val20.csv` | `experiments_log/dcd_l2/` |
+
+两者评估的是**同一批 20 颗验证颅骨**、同一套指标定义、同一份已对齐的 `.npz`，
+所以这个对比是干净的、可以直接写进论文的。
+
+### 这个基线的性质（措辞必须准确）
+- 它是**"通用基础模型直接应用于颅骨" vs "颅骨专精训练"**，
+  **不是**同任务下两种方法的较量。
+- 论文 Table 1 报的 DCD=1.41269 与本项目实测的 1.42772 只差 1%，
+  说明**他们的模型在颅骨上的表现和在自己验证集上几乎一样** ——
+  基础模型并没有在颅骨上"失效"，本工作的增益来自**专精化**。
+  这个措辞比"我们修好了它的缺陷"更准确、也更站得住。
+- ⚠️ 仍**不要**用 "zero-shot"，理由见上一条目第 8 节。
+
+### ⚠️ 与 README 的冲突（待处理）
+`README.md` 目前仍写着项目目标是
+"compare one **voxel baseline** vs one geometry-aware method"、
+"a **self-built** corrupted dataset"，而实际情况是：
+- `src/corruption/` 仍是 `# placeholder`，用的是 SkullFix 自带缺损；
+- 没有任何体素方法的代码；
+- `src/eval/` 只有 Chamfer/DCD，没有 Hausdorff/MSD/Dice。
+
+**这个冲突需要和导师确认后再改 README** —— 是范围正式收窄（那就改 README），
+还是体素基线只是延后（那就在 README 里标注"计划中/未开始"）。
+在确认之前不动 `README.md`，避免自己改掉论文的主命题。
+
+---
+
 ## 待办总览（截至 2026-08-06，合并历次清单）
 
 ### 已完成
