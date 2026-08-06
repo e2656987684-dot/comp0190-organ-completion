@@ -100,6 +100,17 @@ def parse_args():
                     help="cd_dcd = Chamfer + the paper's density-aware term. "
                          "'dcd' alone is the demo's loss and will NOT train from scratch "
                          "(see the warning on dcd_loss).")
+    ap.add_argument("--dcd-weight", type=float, default=1.0,
+                    help="scales the DCD term of --loss cd_dcd. Judge it by gradient share, "
+                         "not by the loss value: DCD is already 92%% of the loss value but "
+                         "only ~36%% of the gradient at 1.0, because it saturates. Measured "
+                         "shares: 1->36%%, 2->53%%, 3->63%%, 5->74%%, 10->85%%. Past ~10 "
+                         "Chamfer barely votes and shape accuracy is at risk.")
+    ap.add_argument("--dcd-lambda", type=float, default=1.0,
+                    help="exponent in DCD's density weight 1/count^lambda. Targets clumping "
+                         "specifically, where --dcd-weight scales DCD's distance and density "
+                         "factors together. The more targeted knob for the 11.2%%-of-points-"
+                         "within-2mm problem (ground truth is 0.0%%).")
     ap.add_argument("--val-frac", type=float, default=0.2,
                     help="used only when --n-folds is 0 (single random split)")
     ap.add_argument("--n-folds", type=int, default=0,
@@ -228,13 +239,17 @@ def main():
     # ---------------- model ----------------
     model = msn.build_model(cfg)
     optimizer = tf.keras.optimizers.Adam(learning_rate=args.lr, clipnorm=1.0)
-    model.compile(optimizer=optimizer, loss=msn.LOSSES[args.loss],
+    model.compile(optimizer=optimizer,
+                  loss=msn.make_loss(args.loss, dcd_weight=args.dcd_weight,
+                                     n_lambda=args.dcd_lambda),
                   metrics=[msn.cd_t_metric, msn.cd_p_metric, msn.dcd_metric])
 
     print(f"\nconfig={args.config}  params={model.count_params() / 1e6:.1f}M  "
           f"in={cfg.n_in} out={cfg.n_out}")
     print(f"train={len(train_idx)} skulls  val={len(val_idx)} skulls "
           f"(ids {', '.join(ids[val_idx][:5])}{'...' if n_val > 5 else ''})")
+    if args.loss == "cd_dcd":
+        print(f"dcd_weight={args.dcd_weight:g}  dcd_lambda={args.dcd_lambda:g}")
     print(f"loss={args.loss}  lr={args.lr:g}  batch={args.batch_size}  "
           f"budget={args.minutes:g} min  scale={scale_mm:.1f} mm")
     if args.n_folds > 0:
@@ -282,6 +297,7 @@ def main():
         "lr": args.lr, "batch_size": args.batch_size, "seed": args.seed,
         "n_folds": args.n_folds, "fold": args.fold if args.n_folds > 0 else None,
         "early_stop_patience": args.early_stop_patience,
+        "loss": args.loss, "dcd_weight": args.dcd_weight, "dcd_lambda": args.dcd_lambda,
         "epochs_run": len(history.history["loss"]),
         "scale_mm": scale_mm,
         "train_ids": ids[train_idx].tolist(), "val_ids": ids[val_idx].tolist(),

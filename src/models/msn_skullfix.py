@@ -194,13 +194,52 @@ def chamfer_loss(y_true, y_pred):
     return tf.reduce_mean(calc_cd(y_pred, y_true)[1])
 
 
-def cd_dcd_loss(y_true, y_pred, dcd_weight=1.0):
+def cd_dcd_loss(y_true, y_pred, dcd_weight=1.0, n_lambda=1.0):
     """Chamfer + DCD. No scheduling needed: CD starts around 5 and dominates
     while the shape is still wrong, then decays below the bounded DCD term,
     which takes over as the density-aware refinement signal."""
     cd_p, cd_t, dist1, dist2, idx1, idx2 = calc_cd(y_pred, y_true, return_raw=True)
     return tf.reduce_mean(cd_t) + dcd_weight * _dcd_from_raw(
-        y_pred, y_true, dist1, dist2, idx1, idx2)
+        y_pred, y_true, dist1, dist2, idx1, idx2, n_lambda=n_lambda)
+
+
+def make_loss(name, dcd_weight=1.0, n_lambda=1.0):
+    """Build a Keras-compatible loss, with DCD's two knobs exposed.
+
+    dcd_weight scales the whole DCD term. Read it as a gradient share, not as a
+    share of the loss value -- the two are wildly different here, and the loss
+    value is the misleading one. Measured on the trained model: DCD is 92.6% of
+    the loss VALUE (0.874 of 0.944) but only ~36% of the gradient, because DCD
+    is bounded in [0,2] and saturates while Chamfer does not. So the weight is
+    doing much less than the printed loss suggests:
+
+        dcd_weight   1     2     3     5    10    20
+        DCD's share 36%   53%   63%   74%   85%   92%   of |grad|
+
+    Past ~10 Chamfer barely gets a vote and shape accuracy is at risk; 1-5 is
+    the useful range.
+
+    n_lambda is the exponent in DCD's density weight 1/count^n_lambda, i.e. how
+    hard a predicted point is punished for being the nearest neighbour of many
+    ground-truth points. Raising it targets clumping SPECIFICALLY, whereas
+    dcd_weight scales DCD's distance and density factors together -- DCD is
+    `1 - exp(-dist*alpha) * 1/count^n_lambda`, a product of both. If the goal is
+    the 11.2%-of-points-within-2mm problem rather than accuracy in general,
+    n_lambda is the more targeted knob of the two.
+    """
+    if name == "cd":
+        return chamfer_loss
+    if name == "dcd":
+        return dcd_loss
+    if name != "cd_dcd":
+        raise ValueError(f"unknown loss {name!r}; expected one of {sorted(LOSSES)}")
+
+    def loss(y_true, y_pred):
+        return cd_dcd_loss(y_true, y_pred, dcd_weight=dcd_weight, n_lambda=n_lambda)
+
+    # Keras logs this name; keep the settings visible in history.csv headers.
+    loss.__name__ = f"cd_dcd_w{dcd_weight:g}_l{n_lambda:g}"
+    return loss
 
 
 LOSSES = {"cd": chamfer_loss, "dcd": dcd_loss, "cd_dcd": cd_dcd_loss}
