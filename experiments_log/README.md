@@ -9,8 +9,16 @@
 
 | run | 说明 | val CD_t | epochs |
 |---|---|---:|---:|
-| `baseline_es20` | 100 对数据 + EarlyStopping(patience=20) 首次完整跑通。<br>单次 80/20 划分（seed 42），未做 k-fold，无正则化。 | **7.08 mm** | 133（最优在 112） |
+| `baseline_es20` | 100 对数据 + EarlyStopping(patience=20) 首次完整跑通。<br>单次 80/20 划分（seed 42），未做 k-fold，无正则化。 | 7.076 mm | 133（最优在 98） |
+| `dcd_w3` | `--dcd-weight 3`。密度改善（扎堆 12.6→9.7%）但精度变差。<br>**弃用** —— 兑换率太差，weight 保持默认 1。 | 7.406 mm | 77 |
+| `dcd_l2` | `--dcd-lambda 2`（weight 留 1）。密度没动，但四项精度指标同向改善。<br>**当前最好**，采纳为新默认。 | **6.945 mm** | 149（最优在 129） |
 | `pretrained_baseline` | 对照组：作者发布的 `MSN_weights3.h5` 直接推理，<br>不在颅骨上训练。由 `notebooks/MSN_baseline_pretrained.ipynb` 产出。 | 见 CSV | — |
+
+⚠️ **CD_t 的差距（~0.13mm）小于逐 epoch 抖动（std ~0.24mm）**，单折结论不足以定性，
+需要 k-fold 才能写进论文。详细的噪声核查见 `devlog.md` 的 2026-08-06 条目。
+
+`surface_quality.csv` 存的是密度/表面偏差指标（8 颗验证颅骨均值），
+由 `notebooks/MSN_surface_quality.ipynb` 产出，和上表的 CD_t 是两套互补的指标。
 
 两者评估的是**同一批 20 颗验证颅骨**、同一套指标定义（`msn_skullfix.calc_cd`）、
 同一份已对齐的 `.npz` 数据，所以可以直接对比。注意这个对照的性质是
