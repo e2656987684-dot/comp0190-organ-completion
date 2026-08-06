@@ -239,7 +239,17 @@ def fig_smoothing_ladder(points, scale_mm, levels=("raw", "light", "default", "h
     Use this to see what the reconstruction is doing to your surface before
     trusting any single render. Run it on ground truth too: whatever texture
     shows up there is the reconstruction's, not your model's.
+
+    A single level can be passed as a bare string: levels="raw" behaves the
+    same as levels=("raw",). Without this, the missing-comma version is a
+    string, iterating it yields characters, and the failure surfaces as a
+    baffling KeyError: 'r'.
     """
+    if isinstance(levels, str):
+        levels = (levels,)
+    unknown = [k for k in levels if k not in PRESETS]
+    if unknown:
+        raise KeyError(f"未知的 preset {unknown}；可选: {sorted(PRESETS)}")
     return fig_meshes(
         [(pc_to_mesh(points, scale_mm, **PRESETS[k]),
           f"{k}<br><sub>r={PRESETS[k]['radius_mm']} σ={PRESETS[k]['sigma']} "
