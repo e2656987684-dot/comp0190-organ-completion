@@ -56,6 +56,31 @@ from skimage import measure
 # Locked reconstruction settings -- see the module docstring before touching.
 RECON = {"res": 128, "radius_mm": 6.0, "sigma": 2.5, "taubin": 60, "pad": 0.14}
 
+# Named smoothing levels for LOOKING AT ONE MODEL, e.g.
+#   pc_to_mesh(pred, scale_mm, **PRESETS["raw"])
+# or all of them at once via fig_smoothing_ladder().
+#
+# These exist for exploring what a surface actually looks like. They are NOT for
+# comparing two models -- for that, leave the settings alone and let RECON apply,
+# or every figure is reconstructed differently and the comparison means nothing.
+#
+# "raw" is the honest view of where the points are and nothing else; because
+# each point becomes a ball, it mostly shows the reconstruction's own texture,
+# and ground truth looks just as lumpy as any prediction. Smoothing is what
+# removes that shared texture and leaves the differences between models.
+PRESETS = {
+    # no smoothing at all: ball-per-point, tight radius. Shows individual points
+    # and any clumping directly, at the cost of looking like gravel.
+    "raw":     {"radius_mm": 4.0, "sigma": 0.0, "taubin": 0},
+    # balls are bridged, but the cobblestone texture is still there
+    "light":   {"radius_mm": 5.0, "sigma": 1.0, "taubin": 15},
+    # the locked default, repeated here so ladders include it
+    "default": {"radius_mm": 6.0, "sigma": 2.5, "taubin": 60},
+    # aggressive: only gross shape survives. Useful to check overall form, but
+    # it will hide real surface defects too -- do not judge quality from this.
+    "heavy":   {"radius_mm": 7.0, "sigma": 4.0, "taubin": 120},
+}
+
 # Ground truth is farthest-point sampled, so its spacing is near-uniform and it
 # contains literally no pair closer than ~3.5 mm. Predictions are not, and the
 # fraction of points sitting on top of a neighbour is the clearest single number
@@ -71,6 +96,23 @@ def pc_to_mesh(points, scale_mm, **overrides):
     have and which are unreliable to estimate on a skull (a thin bone shell,
     where inner and outer surface normals flip against each other), and it
     tends to close the defect -- exactly the feature being inspected.
+
+    `overrides` take precedence over RECON, for exploring one model:
+
+        pc_to_mesh(pred, scale_mm)                      # locked default
+        pc_to_mesh(pred, scale_mm, sigma=0, taubin=0)   # no smoothing at all
+        pc_to_mesh(pred, scale_mm, **PRESETS["heavy"])  # named level
+
+    Knobs, and the ranges that behave sensibly at 4096-6144 points:
+      radius_mm  ball radius per point, 4-7. Below ~4 the balls stop touching
+          and the skull renders as a sponge; above ~8 the defect starts to be
+          bridged over and you lose it.
+      sigma      distance-field blur in voxels, 0-4. The main smoothness knob.
+      taubin     mesh smoothing passes, 0-120. Cheap; does not shrink the model.
+      res        grid size, 96 (fast) to 160 (fine). Cost is roughly res^3.
+
+    Overriding for a single model is fine and useful. Overriding while comparing
+    models is not -- see the module docstring.
     """
     cfg = {**RECON, **overrides}
     P = np.asarray(points, dtype=np.float64)
@@ -188,6 +230,21 @@ def fig_meshes(items, title="", height=620):
     fig.update_layout(title=title, height=height, margin=dict(l=0, r=0, t=60, b=0),
                       **{f"scene{i if i > 1 else ''}": scene for i in range(1, len(items) + 1)})
     return fig
+
+
+def fig_smoothing_ladder(points, scale_mm, levels=("raw", "light", "default", "heavy"),
+                         title="", height=560):
+    """One cloud rendered at several smoothing levels, for picking a level.
+
+    Use this to see what the reconstruction is doing to your surface before
+    trusting any single render. Run it on ground truth too: whatever texture
+    shows up there is the reconstruction's, not your model's.
+    """
+    return fig_meshes(
+        [(pc_to_mesh(points, scale_mm, **PRESETS[k]),
+          f"{k}<br><sub>r={PRESETS[k]['radius_mm']} σ={PRESETS[k]['sigma']} "
+          f"taubin={PRESETS[k]['taubin']}</sub>") for k in levels],
+        title=title, height=height)
 
 
 def fig_diagnostic(pred, gt, scale_mm, title="", height=620):
