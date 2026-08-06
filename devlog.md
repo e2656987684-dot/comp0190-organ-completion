@@ -401,6 +401,111 @@ lambda 名义上是密度因子的指数（`1/count^λ`），调大应该更狠�
 
 ---
 
+## 2026-08-06（查证原项目：论文数据、可比性、以及一个关键的正确性验证）
+
+起因：想知道原项目是不是只用 DCD、他们的密度是多少、能不能直接对比数字。
+以下每条都标了出处，可自行复核。
+
+### 出处清单
+| 内容 | 网址 |
+|---|---|
+| 原仓库 | https://github.com/jrHoss/MedShapeNet-Foundation-Model |
+| 论文 PDF（就在仓库里，23 页） | https://github.com/jrHoss/MedShapeNet-Foundation-Model/blob/main/MedShapeNet_Foundation_Model.pdf |
+| 损失函数实现 | https://github.com/jrHoss/MedShapeNet-Foundation-Model/blob/main/utils/loss.py |
+| 训练脚本 | https://github.com/jrHoss/MedShapeNet-Foundation-Model/blob/main/train.py |
+| 论文（ResearchGate 版） | https://www.researchgate.net/publication/384968432_A_MedShapeNet_Foundation_Model_-_Learning-Based_Multimodal_Medical_Point_Cloud_Completion |
+| DCD 原论文 (Wu et al., NeurIPS 2021) | https://arxiv.org/abs/2111.12702 |
+
+### 1. ⭐ 一个可以写进论文的正确性验证
+
+论文 Table 1 报的 **DCD = 1.41269**（他们自己的 20,962 个验证点云）。
+本项目用他们的权重在**颅骨数据**上推理，测得 **DCD = 1.42772**
+（`experiments_log/pretrained_baseline/eval_val20.csv`，20 颗均值）。
+
+**两者相差 1%。** 这同时证明三件事：
+1. `msn_skullfix.calc_dcd` 是原实现的忠实移植 —— 数值层面复现了论文；
+2. `MSN_weights3.h5` 加载正确（呼应 `msn_demo_arch.py` 那个静默失败的坑）；
+3. 整条评测管线可信。
+
+**这个数字应该写进论文的方法学章节**，它是"我们的复现是对的"最直接的证据。
+
+### 2. 原项目确实只用 DCD，而且从没调过 α / λ
+
+`train.py`：`loss = calc_dcd`，Adam `lr=1e-7`，`batch_size=8`，`epochs=500`，
+ReduceLROnPlateau(factor 0.9, patience 5)。
+`loss.py` 里 `calc_dcd(x, gt, alpha=1, n_lambda=1, ...)` —— **train.py 调用时不传任何覆盖值**。
+
+含义：
+- 本项目的 `baseline_es20`（w=1, λ=1）在这两个参数上**与原项目一致**；
+- 原项目**没有提供任何"调 λ 有用"的先例**，`dcd_l2` 那次实验（以及"λ 改善精度而非密度"
+  这个反直觉结论）是本工作新做的。
+
+### 3. 论文报的数字
+
+| | Table 1（全量） | Table 2（4,800 形状子集） |
+|---|---:|---:|
+| 训练数据 | 200,000 点云 / 240 类 | 4,800 形状 |
+| 验证集 | 20,962 点云 | — |
+| CD | 0.00170 | 0.002327 |
+| DCD | 1.41269 | 1.60467 |
+| F-score @0.05 | 0.9370 | 0.89202 |
+| F-score @0.03 | 0.7408 | 0.6234 |
+
+Table 2 是他们和 FC / PCN 的对比（PCN 输出 6,084 点、GT 6,144 点，数量不匹配所以 DCD 记 N/A）。
+**Table 2 那一列是和本项目处境最接近的参照**（小数据量），但本项目目前不算 F-score，无法并排 —— 见待办。
+
+训练配置：**6× RTX A6000（各 40GB）+ 8 CPU + 1000GB RAM，约六周**，
+322 epoch 后因连续 12 轮无改善停止。对照本项目：单卡、约 20 分钟、149 epoch。
+**算力差约三个数量级** —— 引用他们的绝对数字时必须交代这一点。
+
+### 4. ⚠️ CD 不能直接跨项目比（DCD 可以）
+
+他们的 `calc_cd` 用 `tf.norm`（**线性**距离，非平方），`cd_t = mean(d1)+mean(d2)`，
+和本项目完全一致。**但按这个定义，CD=0.00170 意味着单向平均误差 0.00085 归一化单位
+—— 比 6144 个点自身的间距（约 0.03）还小 35 倍，物理上不可能。**
+
+`loss.py` 里另有一个 `chamfer_distance_loss`（调 `tfg.nn.loss.chamfer_distance`，
+返回**平方**距离），0.00170 换算成 RMS 是 0.029，正好落在点间距量级。
+**推测 Table 1 的 CD 来自这个函数，不是 `calc_cd`。** 仓库里没有评测脚本，无法确证。
+
+→ **写论文时不要拿本项目的 CD_t 和他们 Table 1 的 CD 并排。**
+DCD 没有这个问题（同公式、同 α=1、同 [0,2] 范围），这也正是第 1 节能对上的原因。
+
+### 5. ⚠️ `CD_p` 量纲不成立，建议不再报告
+
+`cd_p = (sqrt(mean(d1)) + sqrt(mean(d2)))/2`，而 `d` 已是线性距离 ——
+这是**对长度开根号**。DCD 原论文的定义是 `mean(sqrt(d²))` 即平均距离，
+原项目移植时写错了，本项目忠实复现了这个错误。
+
+`eval_val20.csv` 里的 `CD_p_mm`（23.6mm）因此是无意义的。
+**`CD_t_mm` 没问题**（线性距离之和 × scale_mm，量纲正确），继续作为主指标。
+
+### 6. 论文 Eq.(4) 印错了
+
+写成 `½(Σe^{-α‖·‖²} + Σe^{-α‖·‖²})`，**漏掉了 `1 −` 和密度权重 `1/n_y^λ`**。
+紧接着的正文和代码都是对的。读的时候以 `loss.py` 为准。
+
+### 7. 论文里**没有**的东西（本工作的空间）
+
+- **没有任何密度/均匀性指标**。论文只说"DCD 能评估不均匀点分布"，
+  从未直接测过扎堆率或间距 CV。**`mesh_viz.surface_stats` 是论文之外的东西。**
+- **没有 mesh 重建/可视化代码**（之前翻仓库时已确认）。
+- **没有交叉验证**，单次 90/10 划分。
+- **没有 mm 单位**，全是归一化数值，临床上不可解释。
+
+### 8. 「zero-shot」这个措辞很可能是错的（待落实）
+
+之前挂着的待办「`MSN_weights3.h5` 训练时是否见过颅骨」，查到两条**间接**证据：
+- 论文/README 称 MedShapeNet 覆盖 **240 类，含 organs / vessels / bones / instruments**；
+- MedShapeNet 数据集本身部分源自 AutoImplant 挑战赛（SkullFix 的来源）。
+
+**都不是直接证据**，但足以说明「zero-shot 迁移」大概率**站不住**。
+写进论文前必须去 MedShapeNet 数据集主页核实类别清单是否含 skull/cranium。
+在落实之前，对照组表述建议用中性的
+**"作者发布的预训练权重直接应用于本项目颅骨数据"**，不要写 zero-shot。
+
+---
+
 ## 待办总览（截至 2026-08-06，合并历次清单）
 
 ### 已完成
