@@ -238,6 +238,9 @@ def main():
 
     # ---------------- model ----------------
     model = msn.build_model(cfg)
+    # Plain Adam on purpose. AdamW/dropout were added and removed: this model does
+    # not overfit (val/train CD_t 1.03-1.08x on every run), so there is nothing for
+    # a regulariser to fix. See the 2026-08-06 devlog entry.
     optimizer = tf.keras.optimizers.Adam(learning_rate=args.lr, clipnorm=1.0)
     model.compile(optimizer=optimizer,
                   loss=msn.make_loss(args.loss, dcd_weight=args.dcd_weight,

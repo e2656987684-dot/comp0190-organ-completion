@@ -325,7 +325,13 @@ def LBR(tensor, C, name, use_bias=True, leaky=0.0):
 
 
 def _offset_attention(query_src, key_src, name):
-    """PCT offset attention. query_src is the residual stream."""
+    """PCT offset attention. query_src is the residual stream.
+
+    Dropout was tried here (on the sublayer output, the standard transformer
+    placement) and removed -- it made val CD_t 2x worse and the model was never
+    overfitting to begin with. See the 2026-08-06 devlog entry before adding any
+    regulariser: measured val/train CD_t is 1.03-1.08x across every run.
+    """
     C = key_src.shape[-1]
     out_dim = query_src.shape[-1]
     q = L.Dense(C // 4, use_bias=False, name=name + "_Q")(query_src)
