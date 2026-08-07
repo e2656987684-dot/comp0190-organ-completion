@@ -257,7 +257,7 @@ def fig_smoothing_ladder(points, scale_mm, levels=("raw", "light", "default", "h
         title=title, height=height)
 
 
-def fig_diagnostic(pred, gt, scale_mm, title="", height=620):
+def fig_diagnostic(pred, gt, scale_mm, title="", height=620, dev_lim=None, sp_max=None):
     """The two things a shaded mesh cannot show, side by side.
 
     Left  -- signed deviation from the ground-truth surface: red outside, blue
@@ -265,6 +265,12 @@ def fig_diagnostic(pred, gt, scale_mm, title="", height=620):
              scatter around the surface rather than sitting on it.
     Right -- nearest-neighbour spacing: dark points are clumped onto a
              neighbour, i.e. wasted, since they cover no new surface.
+
+    `dev_lim` / `sp_max` fix the colour limits. Leave them None to auto-scale to
+    THIS cloud, which is fine for looking at one model and wrong for comparing
+    two: auto-scaling renders the best and the worst model in the same range of
+    colours, so a real difference disappears. `fig_spacing_grid` locks them for
+    you; pass them explicitly if you build a comparison by hand.
     """
     import plotly.graph_objects as go
     from plotly.subplots import make_subplots
@@ -272,14 +278,15 @@ def fig_diagnostic(pred, gt, scale_mm, title="", height=620):
     P = np.asarray(pred, dtype=np.float64)
     dev = signed_deviation(P, gt, scale_mm)
     sp = local_spacing(P, scale_mm)
-    lim = float(np.percentile(np.abs(dev), 95))
+    lim = float(dev_lim if dev_lim is not None else np.percentile(np.abs(dev), 95))
 
     fig = make_subplots(rows=1, cols=2, specs=[[{"type": "scatter3d"}] * 2],
                         subplot_titles=(f"有符号偏差 (±{lim:.1f}mm, 红=外/蓝=内)",
                                         "最近邻间距 (暗=扎堆)"), horizontal_spacing=0.02)
+    sp_hi = float(sp_max if sp_max is not None else np.percentile(sp, 95))
     for col, (vals, cs, cmin, cmax, bar) in enumerate(
             [(dev, "RdBu_r", -lim, lim, "mm"),
-             (sp, "Viridis", 0.0, float(np.percentile(sp, 95)), "mm")], start=1):
+             (sp, "Viridis", 0.0, sp_hi, "mm")], start=1):
         fig.add_trace(go.Scatter3d(
             x=P[:, 0], y=P[:, 1], z=P[:, 2], mode="markers",
             marker=dict(size=1.9, color=vals, colorscale=cs, cmin=cmin, cmax=cmax,
@@ -290,4 +297,46 @@ def fig_diagnostic(pred, gt, scale_mm, title="", height=620):
                  zaxis_visible=False, camera=dict(eye=dict(x=0.0, y=-1.5, z=1.15)))
     fig.update_layout(title=title, height=height, margin=dict(l=0, r=0, t=60, b=0),
                       showlegend=False, scene=scene, scene2=scene)
+    return fig
+
+
+def fig_spacing_grid(items, scale_mm, title="", height=520, sp_max=None, clump_mm=CLUMP_MM):
+    """Several predictions side by side, coloured by nearest-neighbour spacing.
+
+    This is the figure for the density result. `fig_diagnostic` renders one model
+    at a time and auto-scales its colours to that model, so putting two of its
+    outputs next to each other makes a 12.8% clump rate and a 1.4% one look
+    alike. Here every panel shares one scale, computed across all of them, so
+    dark really does mean "closer together than in the panel next door".
+
+    Each panel's subtitle carries its own clump rate, since colour alone is hard
+    to read quantitatively. Ground truth scores 0.0% and is worth including as
+    the leftmost panel for reference.
+
+    items: list of (points, label).
+    """
+    import plotly.graph_objects as go
+    from plotly.subplots import make_subplots
+
+    sps = [local_spacing(np.asarray(p, dtype=np.float64), scale_mm) for p, _ in items]
+    hi = float(sp_max if sp_max is not None else
+               np.percentile(np.concatenate(sps), 97))
+    labels = [f"{lbl}<br><sub>扎堆<{clump_mm:g}mm: {(s < clump_mm).mean() * 100:.1f}%</sub>"
+              for (_, lbl), s in zip(items, sps)]
+
+    fig = make_subplots(rows=1, cols=len(items), horizontal_spacing=0.01,
+                        specs=[[{"type": "scatter3d"}] * len(items)], subplot_titles=labels)
+    for i, ((pts, _), sp) in enumerate(zip(items, sps), start=1):
+        P = np.asarray(pts, dtype=np.float64)
+        fig.add_trace(go.Scatter3d(
+            x=P[:, 0], y=P[:, 1], z=P[:, 2], mode="markers",
+            marker=dict(size=1.9, color=sp, colorscale="Viridis", cmin=0.0, cmax=hi,
+                        opacity=0.9, showscale=(i == len(items)),
+                        colorbar=dict(title="间距<br>mm", len=0.72)),
+            hoverinfo="skip"), row=1, col=i)
+    scene = dict(aspectmode="data", xaxis_visible=False, yaxis_visible=False,
+                 zaxis_visible=False, camera=dict(eye=dict(x=0.0, y=-1.5, z=1.15)))
+    fig.update_layout(title=title or f"最近邻间距（暗=扎堆，色标已锁定 0~{hi:.1f}mm）",
+                      height=height, showlegend=False, margin=dict(l=0, r=0, t=80, b=0),
+                      **{f"scene{i if i > 1 else ''}": scene for i in range(1, len(items) + 1)})
     return fig
