@@ -1,277 +1,381 @@
 # Progress report — speaking script / 进度汇报讲稿
 
-Bilingual notes for `progress_report.pptx`. One section per slide.
+Bilingual notes for `progress_report.pptx` (8 slides). One section per slide.
 每页一节，中英对照。
 
-Figures and numbers all come from `src/eval/make_report_figures.py`, which reads
-the real runs — regenerate it and the deck stays in sync.
+**Figure provenance / 图片来源说明.** All numbers and all point clouds come from
+the real runs in `experiments/`, via `src/eval/make_report_figures.py`. Two
+compositions are new code written for this deck rather than screenshots of an
+existing notebook: `completion.png` (grey base with the defect region
+highlighted) and `dcd_blindspot.png`, which is a hand-drawn schematic and not
+data at all. Everything else — curves, density panels, meshes, tables — is the
+same code the notebooks call.
+数字和点云全部来自 `experiments/` 里的真实 run。有两张图的**构图**是为这份汇报新写的，
+不是现有 notebook 的截图：`completion.png`，以及 `dcd_blindspot.png`（那是手画的示意图，
+根本不是数据）。其余的曲线、密度图、mesh、表格都是 notebook 调用的同一套代码。
 
 ---
 
-## Slide 1 — Task and evaluation baseline / 任务与评测基线
+## Slide 1 — Task and baseline / 任务与基线
 
-**EN.**
-The task is skull completion: the input is a defective skull as 4,096 points, the
-output a complete one as 6,144 points. On the left is the ground truth with the
-missing region marked in red; on the right, the points our model places inside
-that same region. Grey is surface that was already in the input.
+**EN.** The task is skull completion: 4,096 points of a defective skull in,
+6,144 points of a complete skull out. The dataset is SkullFix, 100 skulls, split
+80 train and 20 validation — and every run I report today uses that same split,
+so the comparisons are like for like.
 
 Before improving anything I needed something to compare against, so I ran the
-authors' released weights on my own data — same 20 validation skulls, same metric
+authors' released weights on my own data: same validation skulls, same metric
 definitions, same aligned point clouds. They score 10.71 mm Chamfer distance and
-1.428 DCD. My model, trained from scratch on skulls, reaches 6.41 mm and 0.676:
-40% and 51% better respectively.
+1.428 DCD; my model, trained from scratch on skulls, reaches 6.41 mm and 0.676.
+
+The figure marks the missing region in red on the ground truth, and in blue the
+points my model places inside that same region — grey is surface that was already
+in the input.
 
 One detail worth flagging. The source paper reports DCD = 1.41269 on its own
-validation set. Their weights measure 1.42772 on my data — a 1% match. That
-confirms my metric implementation is a faithful port and the weights are loading
-correctly. It also says something about the comparison itself: their model has
-not failed on skulls, it performs on skulls almost exactly as it does on its own
-data. My gain comes from specialisation, not from fixing a defect in their model.
+validation set, and the same weights measure 1.42772 on my data: a 1% match. That
+confirms my metric implementation is a faithful port and the weights load
+correctly. It also frames the comparison honestly — their model has not failed on
+skulls, it performs here almost exactly as it does on its own data. My gain comes
+from specialisation, not from fixing a defect in their work.
 
-**中文。**
-任务是颅骨补全:输入是 4096 个点的残缺颅骨,输出 6144 个点的完整颅骨。左图是真值,
-红色标出缺失区域;右图是我们模型在同一区域生成的点。灰色是输入里本来就有的表面。
+**中文.** 任务是颅骨补全:输入 4096 个点的残缺颅骨,输出 6144 个点的完整颅骨。
+数据集是 SkullFix,100 颗颅骨,80 训练 / 20 验证——今天报告的每一次实验都用同一个划分,
+所以对比是同口径的。
 
-在做任何改进之前,我需要一个可比的基准,所以我把作者发布的权重放到自己的数据上跑了一遍
-——同一批 20 颗验证颅骨、同一套指标定义、同一份已对齐的点云。它得到 10.71mm 的
-Chamfer 距离和 1.428 的 DCD。我从零训练的模型是 6.41mm 和 0.676,分别好 40% 和 51%。
+在做任何改进之前我需要一个可比的基准,所以把作者发布的权重放到自己的数据上跑了一遍:
+同一批验证颅骨、同一套指标定义、同一份已对齐的点云。它得到 10.71mm 的 Chamfer 距离
+和 1.428 的 DCD;我从零训练的模型是 6.41mm 和 0.676。
 
-有个细节值得说。原论文在它自己的验证集上报的 DCD 是 1.41269,而它的权重在我的数据上
-实测是 1.42772,相差 1%。这验证了我的指标实现是忠实移植、权重加载也正确。它同时说明了
-这个对比的性质:**他们的模型在颅骨上并没有失效**,表现和在自己数据上几乎一样。
-我的提升来自专精化,不是修复了它的缺陷。
+图上红色是真值里缺失的区域,蓝色是我的模型在同一区域生成的点,灰色是输入里本来就有的表面。
+
+有个细节值得提。原论文在它自己的验证集上报的 DCD 是 1.41269,而同一份权重在我的数据上
+实测 1.42772,相差 1%。这验证了我的指标实现是忠实移植、权重加载也正确。它同时让这个对比
+的表述更准确:**他们的模型在颅骨上并没有失效**,在这里的表现和在自己数据上几乎一样。
+我的提升来自专精化,不是修复了他们的缺陷。
 
 ---
 
-## Slide 2 — The real gap is point density / 真正的差距在点密度
+## Slide 2 — Evaluation tooling / 评测工具
 
-**EN.**
-My original plan, and my supervisor's suggestion, was to add a smoothness penalty
-— the predicted surface looked bumpy. Before implementing it I measured how bumpy
-it actually was, and the answer changed the plan.
+**EN.** Scatter plots cannot tell you whether a predicted surface is any good, so
+I built a reconstruction path: point cloud, KD-tree distance field, Gaussian
+blur, marching cubes, largest connected component, Taubin smoothing. The original
+repository has none of this — it is a pure point-cloud project.
+
+I deliberately avoided Poisson reconstruction, which would be the usual choice.
+It needs per-point normals, which a predicted cloud does not have and which are
+unreliable on a skull anyway — it is a thin bone shell where the inner and outer
+surface normals fight each other. And Poisson tends to close holes, which is
+exactly the feature I want to inspect.
+
+Two rules came out of building it. First, these meshes are for looking, never for
+computing metrics: reconstruction pushes the surface outward by a median of
+5.3 mm, the same order as the model's own error, so any metric computed on a mesh
+would be dominated by the reconstruction. Second, the parameters are locked as
+module-level constants, because every knob changes how smooth a surface looks and
+tuning them per figure would disguise itself as model improvement.
+
+And here is the thing this slide exists to say. These two surfaces look alike, and
+the measurements agree — deviation p95 6.56 versus 5.59 mm across the whole
+comparison. The real difference between my models is in how the points are
+distributed, and a shaded surface hides that completely. That is why everything
+diagnostic from here on is a point cloud, not a mesh.
+
+**中文.** 散点图看不出预测表面好不好,所以我建了一条重建路径:点云 → KD-tree 距离场 →
+高斯模糊 → marching cubes → 取最大连通块 → Taubin 平滑。原仓库完全没有这类代码,
+它是个纯点云项目。
+
+我**刻意避开了 Poisson 重建**,虽然那是通常的选择。它需要每个点的法向,而预测点云没有,
+在颅骨上也估不可靠——颅骨是薄骨壳,内外表面的法向互相打架。而且 Poisson 天生倾向补洞,
+而那个洞恰恰是我要观察的东西。
+
+建的过程中定下两条规矩。第一,**这些 mesh 只能用来看,不能用来算指标**:重建会把表面
+整体外扩,中位 5.3mm,和模型自身误差同一量级,在 mesh 上算指标会被重建伪影主导。
+第二,重建参数锁成模块级常量,因为每个旋钮都会改变"看起来多平滑",逐图调参会让参数变化
+伪装成模型改进。
+
+这一页真正要说的是下面这件事:**这两个表面看起来差不多,指标也确实差不多**——
+整个对比里偏差 p95 是 6.56mm 对 5.59mm。我这几个模型真正的差别在于点是怎么分布的,
+而着色表面把这一点完全藏住了。所以从这里开始,所有诊断图都是点云,不是 mesh。
+
+---
+
+## Slide 3 — Diagnosis / 诊断
+
+**EN.** The plan, and my supervisor's suggestion, was to add a smoothness penalty
+— the predicted surface looked bumpy. I measured how bumpy before implementing
+it, and the measurement changed the plan.
 
 Local roughness comes out at 0.736 for ground truth against 0.760 for the
-prediction. Essentially equal. There is nothing there to win.
+prediction. Essentially equal, so a smoothness penalty has nothing to win. I
+should add that this metric is itself contaminated: the skull is a shell whose
+inner and outer surfaces sit five to seven millimetres apart, and a local plane
+fit cannot separate them from genuine roughness. So I cannot claim the ground
+truth is smooth either — only that there is no exploitable gap between the two.
 
-What is genuinely different is how the points are spaced. Ground truth is
-farthest-point sampled, so no two points are closer than 3 mm and the figure on
-the left is a uniform green. The baseline model, on the right, has 12.8% of its
-points sitting within 2 mm of a neighbour — those are the dark spots. Those
-points are wasted: they cover no surface that a neighbour does not already cover.
-The spacing coefficient of variation is 0.389 against ground truth's 0.145.
+What is genuinely different is spacing. 12.8% of predicted points sit within two
+millimetres of a neighbour. Ground truth, being farthest-point sampled, has none
+at all — not a single pair closer than three millimetres. Spacing coefficient of
+variation is 0.389 against 0.145. Those clumped points are wasted: they cover no
+surface a neighbour does not already cover.
 
 So the direction changed from smoothness to density, on the basis of measurement
 rather than what the renders looked like.
 
-**中文。**
-我原本的计划,也是导师的建议,是加一个平滑惩罚项——预测的表面看起来坑坑洼洼。
-但在动手之前我先量了一下到底有多不平,结果改变了计划。
+**中文.** 原本的计划、也是导师的建议,是加一个平滑惩罚项——预测的表面看起来坑坑洼洼。
+我在动手之前先量了一下到底有多不平,结果改变了计划。
 
-局部粗糙度真值是 0.736,预测是 0.760,基本持平。这里没有可捡的便宜。
+局部粗糙度真值是 0.736,预测是 0.760,基本持平,平滑惩罚项没有可捡的便宜。
+补充一句:**这个指标本身是被污染的**——颅骨是骨壳,内外表面相距 5 到 7 毫米,
+局部平面拟合分不开它和真实的粗糙度。所以我也不能反过来断言真值很平滑,
+只能说两者之间没有可利用的差距。
 
-真正有差别的是点的疏密。真值是最远点采样出来的,任意两点间距都不小于 3mm,
-所以左图是均匀的绿色。右边的基线模型有 **12.8% 的点距离邻点不到 2mm**,也就是那些暗斑。
-这些点是浪费的:它们覆盖的表面邻点已经覆盖了。间距变异系数是 0.389,而真值是 0.145。
+真正有差别的是**间距**。12.8% 的预测点距离邻点不到 2 毫米;而真值是最远点采样的,
+一个都没有——任意两点都不小于 3 毫米。间距变异系数是 0.389 对 0.145。
+这些扎堆的点是浪费的:它们覆盖的表面邻点已经覆盖了。
 
-所以方向从"平滑"改成了"密度",依据是测量结果,而不是渲染图看上去的样子。
+所以方向从"平滑"改成了"密度",依据是测量,不是渲染图看上去的样子。
 
 ---
 
-## Slide 3 — Why the density-aware loss cannot fix it / 为什么密度感知损失治不了它
+## Slide 4 — DCD's blind spot / DCD 的盲区
 
-**EN.**
-The obvious response is to lean harder on DCD, the density-aware Chamfer distance
-the original project trains with. I tried that, and it barely moved. This slide
-is why.
+**EN.** The obvious response is to lean harder on DCD, the density-aware Chamfer
+distance the original project trains with. I ran two experiments on its
+hyper-parameters and both moved almost nothing. This slide is why.
 
-DCD multiplies a distance factor by a density factor, one over count to the
+DCD multiplies a distance factor by a density factor — one over count, raised to
 lambda. Count is how many ground-truth points match the same predicted point, and
-it comes from an argmin — a piecewise-constant function. Its gradient with
-respect to point position is exactly zero. I verified this: TensorFlow returns
+it comes from an argmin, a piecewise-constant function. Its gradient with respect
+to point position is exactly zero. I verified that directly: TensorFlow returns
 None for that path.
 
 So DCD can re-weight the Chamfer gradients, but it can never apply a force that
-pushes two predicted points apart. The diagram shows the case it is blind to: two
-predictions sitting on top of each other, each matched by a different ground-truth
-point. Count is one for both, so DCD charges nothing at all — and this is the
-dominant form of the clumping I measured.
+pushes two predicted points apart. The diagram shows the case it is completely
+blind to: two predictions sitting on top of each other, each matched by a
+different ground-truth point. Count is one for both, so DCD charges nothing at
+all — and that is the dominant form of the clumping I measured.
 
 Two consequences. Tuning DCD's hyper-parameters was never going to solve density,
-which explains why those experiments failed. And a repulsion term is not
-redundant with DCD — it supplies exactly the gradient DCD structurally lacks.
+which explains why those experiments failed rather than my having run them badly.
+And a repulsion term is not redundant with DCD — it supplies exactly the gradient
+DCD structurally lacks.
 
-**中文。**
-最直接的反应是加大 DCD 的力度——原项目就是用这个密度感知 Chamfer 距离训练的。我试了,
-几乎没动。这一页解释为什么。
+**中文.** 最直接的反应是加大 DCD 的力度——原项目就是用这个密度感知 Chamfer 距离训练的。
+我在它的超参上做了两次实验,都几乎没动。这一页解释为什么。
 
 DCD 是距离因子乘以密度因子,也就是 1 除以 count 的 λ 次方。count 是有多少个真值点匹配到
-同一个预测点,而它来自 argmin——一个分段常数函数。**它对点位置的梯度恰好为零**。
-我验证过:TensorFlow 在这条路径上返回 None。
+同一个预测点,而它来自 argmin,一个分段常数函数。**它对点位置的梯度恰好为零**。
+我直接验证过:TensorFlow 在这条路径上返回 None。
 
-所以 DCD 只能给 Chamfer 的梯度重新加权,**它永远无法产生把两个预测点推开的力**。
-图里画的就是它看不见的情况:两个预测点重合在一起,各自被不同的真值点匹配,
+所以 DCD 只能给 Chamfer 的梯度重新加权,**永远无法产生把两个预测点推开的力**。
+图里画的是它完全看不见的情况:两个预测点重合在一起,各自被不同的真值点匹配,
 两边的 count 都是 1,DCD 一分钱都不罚——而这正是我测到的扎堆的主要形态。
 
-两个后果。第一,调 DCD 的超参本来就不可能解决密度问题,这解释了那几次实验为什么失败。
-第二,repulsion 项和 DCD **不重复**——它提供的正是 DCD 结构上缺失的那个梯度。
+两个后果。第一,调 DCD 超参本来就解决不了密度问题,这说明那几次实验失败**不是我做砸了**,
+而是方向上就不可能。第二,repulsion 项和 DCD **不重复**,它提供的正是 DCD 结构上缺的
+那个梯度。
 
 ---
 
-## Slide 4 — Two changes that worked / 两个真正有效的改动
+## Slide 5 — What worked / 有效的改动
 
-**EN.**
-Two things moved the numbers, and I ran a controlled experiment to separate them.
+**EN.** Two things moved the numbers, and I ran a controlled experiment to
+separate them.
 
-The first was a configuration bug. The learning-rate scheduler and early stopping
-both watch validation loss, but the scheduler's patience was 40 while early
-stopping's was 20 — so training always ended first and the learning rate had
-never once been reduced, in any experiment. Every run before this was trained at
-a flat rate. Fixing it took Chamfer distance from 7.22 to 6.40 mm and let
-training run to 279 epochs instead of 133. The dotted lines in the middle panel
-are the drops.
+The first was a configuration bug, not loss design. The learning-rate scheduler
+and early stopping both watch validation loss, but the scheduler's patience was
+40 while early stopping's was 20 — so training always ended first and the
+learning rate had never once been reduced, in any experiment I had run. Every
+earlier result was produced at a flat learning rate. Fixing it took Chamfer
+distance from 7.22 to 6.40 millimetres and let training run to 279 epochs instead
+of 133. The dotted lines in the middle panel are the drops.
 
-The second was the repulsion loss — a hinge that penalises predicted points
-closer than 2 mm to each other, with a gradient that vanishes once they are far
-enough apart, so it stops fighting Chamfer instead of pushing indefinitely.
+The second was the repulsion loss: a hinge penalty on predicted points closer
+than two millimetres to each other. I chose a hinge rather than the usual
+exponential form for two reasons. Its gradient vanishes exactly once points are
+far enough apart, so it stops competing with Chamfer instead of pushing
+indefinitely. And its threshold is a distance, which I could read straight off
+the ground truth's spacing distribution rather than tune blind.
 
-To attribute these properly I ran a third configuration with the learning-rate
-fix but no repulsion. The result: all of the Chamfer improvement comes from the
-learning rate — repulsion contributes nothing there, 6.40 against 6.41. What
-repulsion does is density: clumping falls from 5.6% to 1.4%, against ground
-truth's 0.0%, at no accuracy cost. So it is a density component, not an accuracy
-component, and I will describe it that way.
+To attribute these properly I ran a third configuration: the learning-rate fix,
+no repulsion. All of the Chamfer improvement is the learning rate — 6.40 against
+6.41, a difference far below run-to-run variance. Repulsion contributes density
+only.
 
-The honest headline is that the largest single gain in this phase came from
-correcting one number in a callback, not from loss design.
+I want to state the uncomfortable version of that plainly: the largest single
+gain in this phase came from correcting one number in a callback, not from loss
+design.
 
-**中文。**
-有两件事真正推动了指标,我专门做了对照实验把它们拆开。
+**中文.** 有两件事真正推动了指标,我做了对照实验把它们拆开。
 
-第一件是一个配置 bug。学习率衰减和早停盯的是同一个信号——验证损失,但衰减的 patience 是
-40、早停是 20,所以训练永远先结束,**学习率在任何一次实验里都从未被下调过**。
-此前每一轮都是恒定学习率跑完的。修好之后 Chamfer 距离从 7.22mm 降到 6.40mm,
-训练轮数从 133 涨到 279。中间那张图上的虚线就是每次下调的位置。
+第一件是**配置 bug,不是损失设计**。学习率衰减和早停盯的是同一个信号——验证损失,
+但衰减的 patience 是 40、早停是 20,所以训练永远先结束,**学习率在我跑过的任何一次实验里
+都从未被下调过**。此前每一个结果都是恒定学习率跑出来的。修好之后 Chamfer 距离从 7.22
+降到 6.40 毫米,训练轮数从 133 涨到 279。中间那张图上的虚线就是每次下调。
 
-第二件是 repulsion 损失——一个铰链项,惩罚彼此距离小于 2mm 的预测点,
-一旦分开够了梯度严格归零,所以它不会像其它形式那样无休止地推、和 Chamfer 拔河。
+第二件是 repulsion 损失:对彼此距离小于 2 毫米的预测点施加铰链惩罚。
+我选铰链而不是常见的指数形式,有两个理由。一是**分开够了梯度就严格归零**,
+它会停下来而不是无休止地推、和 Chamfer 拔河。二是它的阈值是一个距离,
+我可以直接从真值的间距分布里读出来,不用盲调。
 
-为了正确归因,我跑了第三个配置:修学习率但不加 repulsion。结果是:
-**Chamfer 的提升全部来自学习率**,repulsion 在这一项上没有贡献,6.40 对 6.41。
-repulsion 起作用的是密度:扎堆率从 5.6% 降到 1.4%,真值是 0.0%,而且不付出精度代价。
-所以它是一个**密度组件而不是精度组件**,我会这样表述它。
+为了正确归因,我跑了第三个配置:修学习率、不加 repulsion。结果是
+**Chamfer 的提升全部来自学习率**——6.40 对 6.41,差值远低于运行间方差。
+repulsion 只贡献密度。
 
-诚实的标题是:本阶段最大的单项收益来自改正一个回调里的数字,而不是损失函数设计。
+我想把这件事不好听的那个版本直接说出来:**本阶段最大的单项收益,来自改正一个回调里的
+一个数字,而不是损失函数设计。**
 
 ---
 
-## Slide 5 — Results / 结果
+## Slide 6 — Density / 密度
 
-**EN.**
-The full table, on 20 validation skulls, with millimetres converted using each
-skull's own scale.
+**EN.** Colour here is nearest-neighbour spacing, dark meaning points sitting on
+top of each other. One important detail: all four panels share a single colour
+scale computed across all of them. If each panel auto-scaled to its own data — as
+the diagnostic function does by default — a 12.8% clump rate and a 1.4% one would
+render identically, and the figure would hide the very thing it exists to show.
 
-Chamfer distance 7.22 to 6.41 mm. HD95, the 95th-percentile worst-case error,
-7.24 to 6.21 — I added this because Chamfer is a mean and averages away a single
-bad region, which for implant design is exactly what matters. Clumping 12.85% to
-1.36%, essentially reaching ground truth. Note that dcd_l2, the DCD
-hyper-parameter experiment, barely moves anything — consistent with the mechanism
-on slide 3.
+Reading left to right: ground truth is uniform, the baseline is visibly mottled,
+the learning-rate fix already halves it, and repulsion takes it the rest of the
+way. Clumping goes 12.8% to 5.6% to 1.4%, against ground truth's 0.0%. Spacing CV
+follows the same path, 0.389 to 0.297 to 0.238, against 0.145.
 
-I also added F-score at two thresholds, because that is what the source paper
-reports and it lets me put my numbers directly beside theirs. Their full model,
-trained on 200,000 clouds across 240 classes, gets 0.937 at the loose threshold.
+The learning-rate fix accounting for more than half of the density improvement
+was not something I predicted — my working explanation is that smaller late steps
+let points settle rather than jitter, but I have not verified that.
+
+The key point is the last column: Chamfer distance is unchanged. Repulsion buys a
+large density improvement at no accuracy cost. So it is a density component, and
+I will describe it as one rather than as a general improvement.
+
+**中文.** 这里的颜色是最近邻间距,暗色表示点挤在一起。有个重要细节:
+**四格共用同一个跨全体计算的色标**。如果每格各自自动缩放——诊断函数默认就是这样——
+12.8% 的扎堆率和 1.4% 的会被渲染成一模一样,这张图就把它存在的意义给藏起来了。
+
+从左往右看:真值是均匀的,基线明显斑驳,修学习率已经砍掉一半,repulsion 走完剩下的路。
+扎堆率 12.8% → 5.6% → 1.4%,真值是 0.0%。间距 CV 同样的走向,0.389 → 0.297 → 0.238,
+真值 0.145。
+
+**学习率修复占了密度改善的一半以上,这一点我没有预料到**——我的工作解释是后期步长变小
+让点能各就各位而不是一直抖动,但**这个解释我没有验证**。
+
+关键在最后一列:**Chamfer 距离没变**。repulsion 用零精度代价换来了大幅的密度改善。
+所以它是一个密度组件,我会这样描述它,而不是说成整体性能提升。
+
+---
+
+## Slide 7 — Results / 结果
+
+**EN.** The full table, on 20 validation skulls, with millimetres converted using
+each skull's own scale rather than a dataset average.
+
+Chamfer distance 7.22 to 6.41. HD95 — the 95th-percentile error — 7.24 to 6.21. I
+added that one because Chamfer is a mean and averages away a single bad region,
+and for implant design a six-millimetre average with one fifteen-millimetre hole
+is not clinically equivalent to a uniform six-millimetre error. I use the 95th
+percentile rather than the true maximum because a single outlier would dominate
+it.
+
+Note the dcd_l2 row, which is the DCD hyper-parameter experiment — it barely
+moves anything, consistent with the mechanism two slides back.
+
+I also added F-score at two thresholds, because that is precisely what the source
+paper reports, and it lets me put my numbers directly beside theirs. Their full
+model, 200,000 clouds across 240 classes, gets 0.937 at the loose threshold.
 Their small-data run, 4,800 shapes, gets 0.892. Mine, on 80 skulls of a single
 class, is 0.928 — between the two, with three orders of magnitude less training
-data. At the strict threshold I am behind both, which is where the remaining work
-is.
+data. At the strict threshold I am behind both, and that is where the remaining
+work is.
 
-One caveat I want to state rather than hide: DCD and F-score are comparable across
-projects because the definitions and normalisation match, but Chamfer distance is
-not. Under this codebase's definition the paper's reported CD would fall 35 times
-below the point spacing, which is physically impossible — they are almost
-certainly using a squared-distance variant. So I do not put those side by side.
+One caveat I would rather state than have asked. DCD and F-score are comparable
+across projects because the definitions and normalisation match. Chamfer distance
+is not: under this codebase's definition, the paper's reported CD would fall
+thirty-five times below the point spacing, which is physically impossible, so
+they are almost certainly using a squared-distance variant. I do not put those
+two side by side.
 
-**中文。**
-完整的表格,20 颗验证颅骨,毫米数用每颗颅骨自己的尺度换算。
+**中文.** 完整表格,20 颗验证颅骨,毫米数用**每颗颅骨自己的尺度**换算,不是数据集平均值。
 
-Chamfer 距离从 7.22 降到 6.41mm。HD95,也就是 95 分位的最坏情况误差,从 7.24 降到 6.21
-——我加这个指标是因为 Chamfer 是均值,会把某一处的严重偏差平均掉,而对植入体设计来说
-那恰恰是最要命的。扎堆率从 12.85% 降到 1.36%,基本达到真值水平。注意 dcd_l2 那一行,
-也就是 DCD 超参实验,几乎什么都没动——这和第 3 页的机制是一致的。
+Chamfer 距离 7.22 → 6.41。HD95,也就是 95 分位误差,7.24 → 6.21。
+我加这个指标是因为 Chamfer 是均值,会把某一处的严重偏差平均掉,而对植入体设计来说,
+"平均 6 毫米但某处差了 15 毫米"和"均匀 6 毫米误差"在临床上完全不是一回事。
+我用 95 分位而不是真正的最大值,是因为一个离群点就会主导后者。
 
-我还补了两个阈值下的 F-score,因为原论文报的就是这两个,补上之后我的数字才能和它们
-并排放。他们的完整模型在 240 个类别、20 万个点云上训练,宽阈值下是 0.937;
+注意 dcd_l2 那一行,那是 DCD 超参实验——几乎什么都没动,和两页前的机制是一致的。
+
+我还补了两个阈值的 F-score,因为原论文报的正是这两个,补上之后我的数字才能和它们并排。
+他们的完整模型,240 个类别、20 万个点云,宽阈值下是 0.937;
 他们的小数据量版本,4800 个形状,是 0.892。我的是 0.928——**介于两者之间,
 而训练数据少了三个数量级**。严格阈值下我落后于两者,那正是后面工作的空间。
 
-有一点我想说明而不是藏起来:DCD 和 F-score 可以跨项目比,因为定义和归一化都对得上;
-但 Chamfer 距离**不能**。按本代码库的定义,论文报的 CD 会比点间距还小 35 倍,
-物理上不可能——他们几乎肯定用的是平方距离的变体。所以我没有把这两个并排。
+有一点我宁可自己说出来也不想被问出来:**DCD 和 F-score 可以跨项目比**,
+因为定义和归一化都对得上;**Chamfer 距离不能**——按本代码库的定义,论文报的 CD
+会比点间距还小 35 倍,物理上不可能,所以他们几乎肯定用的是平方距离的变体。
+这两个我没有并排放。
 
 ---
 
-## Slide 6 — Next steps / 后续工作
+## Slide 8 — Next steps / 后续工作
 
-**EN.**
-Three things are planned.
+**EN.** Three things are planned.
 
 First, ablate DCD away entirely. Density is now handled by repulsion, the
-hyper-parameter experiments produced nothing, and slide 3 explains why. If
-removing it changes nothing, three losses collapse to two — a cleaner result than
-stacking terms.
+hyper-parameter experiments produced nothing, and slide four explains why. If
+removing it changes nothing, three losses collapse to two — which is a cleaner
+result to report than stacking terms until the number moves.
 
-Second, k-fold cross-validation. Every number I have shown is a single 20-skull
-split. The code is in place and has never been run. This has to happen before
-anything is written up.
+Second, k-fold cross-validation. Every number I have shown today comes from a
+single twenty-skull split. The code is in place and has never been run. This has
+to happen before anything is written up.
 
 Third, defect-region-restricted metrics. Most of the skull surface is already
 present in the input, so the current metrics are diluted by how well the model
 reproduces what it was handed. Restricting them to the defect measures the thing
-that actually matters. This is an evaluation change only — no retraining.
+that actually matters. It is an evaluation-side change only — no retraining.
 
 Three more are under consideration rather than committed.
 
 Focusing the model on the defect: the dataset ships implant labels that I have
 never used. Training on them directly would put all of the model's capacity on
-the hard part and match the AutoImplant evaluation protocol — but it is a large
-change and the metrics would no longer be comparable with everything so far.
+the hard part and would match the AutoImplant evaluation protocol — but it is a
+large change and it breaks comparability with everything so far.
 
-Point-to-plane attraction: an alternative route to my supervisor's smoothness
-goal. Chamfer pulls each prediction toward a discrete sampled point, which lets
-points scatter either side of the true surface; pulling toward a fitted local
-plane instead removes that. It is orthogonal to repulsion and I can verify it with
-tooling I already have.
+Point-to-plane attraction, as another route to the smoothness goal. Chamfer pulls
+each prediction toward a discrete sampled point, which is what lets points
+scatter either side of the true surface; pulling toward a fitted local plane
+instead removes that at source. It is orthogonal to repulsion and I can verify it
+with tooling I already have.
 
 And a Poisson reconstruction control. My current visualisation is deliberately
 robust to uneven density, which means it cannot show why density matters
-clinically. Poisson reconstruction is not — running it would connect the density
-metric to actual usability, and I expect to be asked about that.
+clinically — the evidence chain from "12.8% clumping" to "clinically usable" is
+currently broken. Poisson is not robust to it, so running it would close that gap.
 
-**中文。**
-计划中的有三件。
+**中文.** 计划中的有三件。
 
-第一,把 DCD 整个消融掉。密度现在由 repulsion 接管,超参实验什么也没跑出来,
-第 3 页解释了原因。如果去掉它结果不变,三个损失就能收缩成两个——这比堆叠损失项
-是更干净的结论。
+第一,**把 DCD 整个消融掉**。密度现在由 repulsion 接管,超参实验什么也没跑出来,
+第 4 页解释了原因。如果去掉它结果不变,三个损失就能收缩成两个——
+这比"一直堆损失项直到数字变好"是更干净的结论。
 
-第二,k 折交叉验证。我展示的每一个数字都来自单次 20 颗颅骨的划分。代码早就写好了,
-从来没跑过。这件事必须在动笔之前完成。
+第二,**k 折交叉验证**。今天展示的每一个数字都来自单次 20 颗颅骨的划分。
+代码早就写好了,从来没跑过。这件事必须在动笔之前完成。
 
-第三,缺损区限定的指标。颅骨表面大部分在输入里本来就有,所以现在的指标被
+第三,**缺损区限定的指标**。颅骨表面大部分在输入里本来就有,所以现在的指标被
 "模型复现已知部分的能力"稀释了。把指标限定到缺损区,量的才是真正要考核的东西。
 这纯粹是评测侧的改动,不用重新训练。
 
-另外三件是设想,还没有确定要做。
+另外三件是设想,还没有确定。
 
 **让模型聚焦缺损区**:数据集里带了 implant 标注,我一直没用过。直接以它为训练目标,
 可以把模型全部容量放在难的部分,而且和 AutoImplant 的评测口径一致——
-但改动量很大,而且指标会和此前所有结果不可比。
+但改动量很大,而且会破坏和此前所有结果的可比性。
 
-**点到面引力**:通往导师那个平滑目标的另一条路。Chamfer 是把预测点拉向某个离散的采样点,
-这允许点散布在真实表面两侧;改成拉向拟合出来的局部平面就能消除这一点。
+**点到面引力**,作为通往平滑目标的另一条路。Chamfer 是把预测点拉向某个离散采样点,
+这正是点会散布在真实表面两侧的原因;改成拉向拟合出来的局部平面,就从源头消除了它。
 它和 repulsion 正交,而且我现有的工具就能验收。
 
-**Poisson 重建对照**:我现在的可视化方法对密度不均是刻意鲁棒的,这意味着它无法展示
-密度为什么在临床上重要。Poisson 重建不是——跑一次就能把密度指标和实际可用性连起来,
-我预计会被问到这个问题。
+**Poisson 重建对照**。我现在的可视化对密度不均是刻意鲁棒的,这意味着它无法展示
+密度为什么在临床上重要——**从"12.8% 扎堆"到"临床可用"的证据链现在是断的**。
+Poisson 对此不鲁棒,跑一次就能把这个缺口补上。
