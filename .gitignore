@@ -234,3 +234,8 @@ __marimo__/
 *.ckpt
 *.h5
 experiments/
+# 汇报用的渲染产物：PPTX 约 2MB、PNG 图约 2.3MB，都能由
+# src/eval/make_report_figures.py + make_report_deck.py 从 experiments/ 重新生成。
+# 讲稿是手写的，要跟踪。
+reports/figures/*.png
+reports/*.pptx

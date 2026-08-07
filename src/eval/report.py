@@ -226,12 +226,17 @@ def format_summary(df, gt_row=None):
 # --------------------------------------------------------------------------- #
 # figures
 # --------------------------------------------------------------------------- #
-def fig_curves(runs, scale_mm=None, height=400):
+def fig_curves(runs, scale_mm=None, height=400, settle_epoch=20):
     """Training curves: loss, CD_t in mm, and clump %, with LR drops marked.
 
     The LR markers are the point of this figure. Every run before 2026-08-07 has
     none, because ReduceLROnPlateau's patience was larger than EarlyStopping's
     and it never fired -- and fixing that was worth more than any loss change.
+
+    Y ranges are taken from epoch `settle_epoch` onwards. Autoscaling includes
+    the start-up transient -- CD_t begins near 165 mm and settles around 6 -- so
+    an autoscaled axis renders every run as the same flat line at the bottom and
+    hides the entire result. The transient is still drawn, just clipped.
     """
     import plotly.graph_objects as go
     from plotly.subplots import make_subplots
@@ -240,16 +245,20 @@ def fig_curves(runs, scale_mm=None, height=400):
     titles = ["Loss", "val CD_t (mm)"] + (["val clumping <2mm (%)"] if has_clump else [])
     fig = make_subplots(rows=1, cols=len(titles), subplot_titles=titles)
 
+    series = [("val_loss", 1)] + [("val_cd_t_metric", None)] + \
+             ([("val_clump_metric", 100)] if has_clump else [])
+    settled = {k: [] for k, _ in series}
+
     for n, run in enumerate(runs):
         c = C_SERIES[n % len(C_SERIES)]
         s = scale_mm or run.scale_mm
         show = True
-        for col, (key, mul) in enumerate(
-                [("val_loss", 1), ("val_cd_t_metric", s)] +
-                ([("val_clump_metric", 100)] if has_clump else []), start=1):
+        for col, (key, mul) in enumerate(series, start=1):
             if key not in run.hist:
                 continue
-            fig.add_trace(go.Scatter(y=run.hist[key] * mul, name=run.label,
+            y = run.hist[key] * (s if mul is None else mul)
+            settled[key].append(y[settle_epoch:])
+            fig.add_trace(go.Scatter(y=y, name=run.label,
                                      line=dict(color=c, width=1.6), legendgroup=run.label,
                                      showlegend=show), row=1, col=col)
             show = False
@@ -257,11 +266,20 @@ def fig_curves(runs, scale_mm=None, height=400):
             fig.add_vline(x=ep, line=dict(color=c, width=0.8, dash="dot"),
                           opacity=0.45, row=1, col=2)
 
+    for col, (key, _) in enumerate(series, start=1):
+        vals = np.concatenate([v for v in settled[key] if len(v)]) if settled[key] else None
+        if vals is None or not len(vals):
+            continue
+        lo, hi = float(np.min(vals)), float(np.percentile(vals, 99))
+        pad = max((hi - lo) * 0.08, 1e-9)
+        fig.update_yaxes(range=[max(0.0, lo - pad), hi + pad], row=1, col=col)
+
     fig.update_xaxes(title_text="epoch")
     note = "dotted = learning-rate drop" if any(r.lr_drops for r in runs) else \
            "no learning-rate drops: ReduceLROnPlateau never fired in these runs"
-    fig.update_layout(height=height, title=f"Validation curves ({note})",
-                      legend=dict(orientation="h", y=-0.18), margin=dict(t=70, b=70))
+    fig.update_layout(height=height,
+                      title=f"Validation curves ({note}; y-axis from epoch {settle_epoch})",
+                      legend=dict(orientation="h", y=-0.18), margin=dict(t=80, b=70))
     return fig
 
 

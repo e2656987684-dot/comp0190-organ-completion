@@ -192,17 +192,17 @@ def surface_stats(pred, gt, scale_mm):
 
 def format_stats(rows):
     """rows: list of (name, stats dict) -> a plain-text comparison table."""
-    head = (f"{'':22s} {'扎堆<2mm':>9s} {'间距CV':>8s} {'|偏差|中位':>10s} "
-            f"{'|偏差|p95':>10s} {'偏差std':>8s} {'外侧占比':>9s}")
+    head = (f"{'':22s} {'clump<2mm':>10s} {'spacingCV':>10s} {'|dev|med':>10s} "
+            f"{'|dev|p95':>10s} {'dev std':>9s} {'outside':>9s}")
     out = [head, "-" * len(head)]
     for name, s in rows:
-        out.append(f"{name:22s} {s['clump_pct']:8.1f}% {s['spacing_cv']:8.3f} "
-                   f"{s['dev_abs_median_mm']:9.2f}mm {s['dev_abs_p95_mm']:9.2f}mm "
+        out.append(f"{name:22s} {s['clump_pct']:9.1f}% {s['spacing_cv']:10.3f} "
+                   f"{s['dev_abs_median_mm']:8.2f}mm {s['dev_abs_p95_mm']:8.2f}mm "
                    f"{s['dev_std_mm']:7.2f}mm {s['outside_pct']:8.1f}%")
     if rows:
         s = rows[0][1]
         out += ["-" * len(head),
-                f"{'ground truth (参考)':22s} {s['clump_pct_gt']:8.1f}% {s['spacing_cv_gt']:8.3f}"]
+                f"{'ground truth (ref)':22s} {s['clump_pct_gt']:9.1f}% {s['spacing_cv_gt']:10.3f}"]
     return "\n".join(out)
 
 
@@ -233,12 +233,23 @@ def fig_meshes(items, title="", height=620):
 
 
 def fig_smoothing_ladder(points, scale_mm, levels=("raw", "light", "default", "heavy"),
-                         title="", height=560):
+                         title="", height=560, res=80):
     """One cloud rendered at several smoothing levels, for picking a level.
 
     Use this to see what the reconstruction is doing to your surface before
     trusting any single render. Run it on ground truth too: whatever texture
     shows up there is the reconstruction's, not your model's.
+
+    `res` defaults BELOW RECON's 128 on purpose. The panels each carry a full
+    mesh, and at 128 the "raw" preset alone emits 372k faces; the four-level
+    figure serialises to 30 MB, so a notebook holding two of them gains 60 MB of
+    output and takes tens of minutes to write. At 80 the figure is a few MB and
+    still shows what it needs to -- the point here is the relative texture
+    between levels, not absolute surface detail.
+
+    NOT a comparison tool. Two models rendered through this will differ by
+    whatever the reconstruction does, so use it on one cloud at a time; model
+    comparison goes through `fig_meshes` at the locked RECON settings.
 
     A single level can be passed as a bare string: levels="raw" behaves the
     same as levels=("raw",). Without this, the missing-comma version is a
@@ -249,9 +260,9 @@ def fig_smoothing_ladder(points, scale_mm, levels=("raw", "light", "default", "h
         levels = (levels,)
     unknown = [k for k in levels if k not in PRESETS]
     if unknown:
-        raise KeyError(f"未知的 preset {unknown}；可选: {sorted(PRESETS)}")
+        raise KeyError(f"unknown preset(s) {unknown}; available: {sorted(PRESETS)}")
     return fig_meshes(
-        [(pc_to_mesh(points, scale_mm, **PRESETS[k]),
+        [(pc_to_mesh(points, scale_mm, res=res, **PRESETS[k]),
           f"{k}<br><sub>r={PRESETS[k]['radius_mm']} σ={PRESETS[k]['sigma']} "
           f"taubin={PRESETS[k]['taubin']}</sub>") for k in levels],
         title=title, height=height)
@@ -281,8 +292,9 @@ def fig_diagnostic(pred, gt, scale_mm, title="", height=620, dev_lim=None, sp_ma
     lim = float(dev_lim if dev_lim is not None else np.percentile(np.abs(dev), 95))
 
     fig = make_subplots(rows=1, cols=2, specs=[[{"type": "scatter3d"}] * 2],
-                        subplot_titles=(f"有符号偏差 (±{lim:.1f}mm, 红=外/蓝=内)",
-                                        "最近邻间距 (暗=扎堆)"), horizontal_spacing=0.02)
+                        subplot_titles=(f"Signed deviation (±{lim:.1f} mm, red = outside)",
+                                        "Nearest-neighbour spacing (dark = clumped)"),
+                        horizontal_spacing=0.02)
     sp_hi = float(sp_max if sp_max is not None else np.percentile(sp, 95))
     for col, (vals, cs, cmin, cmax, bar) in enumerate(
             [(dev, "RdBu_r", -lim, lim, "mm"),
@@ -321,22 +333,29 @@ def fig_spacing_grid(items, scale_mm, title="", height=520, sp_max=None, clump_m
     sps = [local_spacing(np.asarray(p, dtype=np.float64), scale_mm) for p, _ in items]
     hi = float(sp_max if sp_max is not None else
                np.percentile(np.concatenate(sps), 97))
-    labels = [f"{lbl}<br><sub>扎堆<{clump_mm:g}mm: {(s < clump_mm).mean() * 100:.1f}%</sub>"
+    labels = [f"{lbl}<br><sub>clumped &lt;{clump_mm:g} mm: "
+              f"{(s < clump_mm).mean() * 100:.1f}%</sub>"
               for (_, lbl), s in zip(items, sps)]
 
     fig = make_subplots(rows=1, cols=len(items), horizontal_spacing=0.01,
                         specs=[[{"type": "scatter3d"}] * len(items)], subplot_titles=labels)
+    # Panel titles sit at the very top of each cell, so the figure title has to be
+    # lifted clear of them or the two overlap.
+    for a in fig.layout.annotations:
+        a.y = min(a.y, 0.93)
     for i, ((pts, _), sp) in enumerate(zip(items, sps), start=1):
         P = np.asarray(pts, dtype=np.float64)
         fig.add_trace(go.Scatter3d(
             x=P[:, 0], y=P[:, 1], z=P[:, 2], mode="markers",
             marker=dict(size=1.9, color=sp, colorscale="Viridis", cmin=0.0, cmax=hi,
                         opacity=0.9, showscale=(i == len(items)),
-                        colorbar=dict(title="间距<br>mm", len=0.72)),
+                        colorbar=dict(title="spacing<br>(mm)", len=0.72)),
             hoverinfo="skip"), row=1, col=i)
     scene = dict(aspectmode="data", xaxis_visible=False, yaxis_visible=False,
                  zaxis_visible=False, camera=dict(eye=dict(x=0.0, y=-1.5, z=1.15)))
-    fig.update_layout(title=title or f"最近邻间距（暗=扎堆，色标已锁定 0~{hi:.1f}mm）",
-                      height=height, showlegend=False, margin=dict(l=0, r=0, t=80, b=0),
+    fig.update_layout(title=dict(text=title or ("Nearest-neighbour spacing "
+                                 f"(dark = clumped; colour scale locked 0–{hi:.1f} mm)"),
+                                 y=0.98, yanchor="top"),
+                      height=height, showlegend=False, margin=dict(l=0, r=0, t=110, b=0),
                       **{f"scene{i if i > 1 else ''}": scene for i in range(1, len(items) + 1)})
     return fig
