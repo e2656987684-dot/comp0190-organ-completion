@@ -120,9 +120,12 @@ def parse_args():
                          "penalty on predicted points closer than --repulsion-r0 to each "
                          "other. This is the one term that can actually push points apart: "
                          "DCD's density factor comes from argmin and has zero gradient "
-                         "w.r.t. position, so it cannot. Start small (0.1-1) and watch that "
-                         "cd_t does not rise -- repulsion knows nothing about the surface, "
-                         "so too much of it inflates the cloud.")
+                         "w.r.t. position, so it cannot. The term is dimensionless (penalty "
+                         "1.0 for a coincident pair, 0 once r0 apart), so its gradient norm "
+                         "is ~0.51 against CD's 0.72 and these weights read normally: 0.5 is "
+                         "roughly a quarter of the gradient. Watch that cd_t does not rise -- "
+                         "repulsion knows nothing about the surface, so too much inflates "
+                         "the cloud.")
     ap.add_argument("--repulsion-r0", type=float, default=2.0,
                     help="target minimum spacing in MILLIMETRES, converted to normalised "
                          "units with this dataset's mean scale_mm. Measured ground truth "
@@ -298,6 +301,21 @@ def main():
     print(f"artifacts -> {out_dir}\n")
 
     budget = TimeBudget(args.minutes)
+
+    # ReduceLROnPlateau and EarlyStopping watch the same signal (val_loss not
+    # improving), so the LR drop only ever happens if its patience is the shorter
+    # of the two. This was 40 against an early-stop patience of 20, which meant it
+    # never fired once in any experiment: every run trained at a flat 3e-4 from the
+    # end of warmup onwards, with nothing to damp late oscillation -- rep05 went
+    # from 1.25 to 2.07 train loss after epoch 104. Derived rather than hardcoded
+    # so that raising --early-stop-patience cannot silently disable it again.
+    # Half the early-stop patience, floored at 3 so it does not thrash, then capped
+    # at one below early stopping so the ordering holds even for tiny patiences
+    # (Keras accepts patience=0, meaning "reduce on the first bad epoch").
+    lr_patience = (min(max(3, args.early_stop_patience // 2), args.early_stop_patience - 1)
+                   if args.early_stop_patience > 0 else 8)
+    assert args.early_stop_patience <= 0 or lr_patience < args.early_stop_patience
+
     callbacks = [
         budget.make_callback(tf.keras),
         make_warmup(tf.keras, args.lr, args.warmup_steps),
@@ -313,7 +331,7 @@ def main():
             os.path.join(out_dir, "best.h5"),
             monitor="val_loss", save_best_only=True, save_weights_only=True, verbose=0),
         tf.keras.callbacks.ReduceLROnPlateau(
-            monitor="val_loss", factor=0.5, patience=40, min_lr=1e-6, verbose=1),
+            monitor="val_loss", factor=0.5, patience=lr_patience, min_lr=1e-6, verbose=1),
         tf.keras.callbacks.CSVLogger(os.path.join(out_dir, "history.csv")),
     ]
     if args.early_stop_patience > 0:

@@ -231,6 +231,19 @@ def repulsion_loss(pred, r0, k=4):
     those range 88.3-133.1 mm, so one fixed normalised r0 enforces 1.70-2.57 mm
     depending on the skull. That spread is noise, not bias; if this direction
     proves out, derive r0 per sample from the target's own spacing instead.
+
+    DIMENSIONLESS ON PURPOSE. The shortfall is divided by r0 before squaring, so
+    the per-pair penalty is a *fraction* in [0,1] -- 1 when two points coincide,
+    0 once they are r0 apart -- instead of a squared length. The first version
+    returned the raw squared length and was unusable: at r0=0.01927 normalised,
+    the largest possible per-pair penalty is r0^2 = 3.7e-4, and after averaging
+    over mostly-compliant pairs the term measured 1e-6 against CD 0.066 and DCD
+    1.147. At weight 0.5 it contributed 0.0095% of the gradient -- the run that
+    used it was, in effect, repulsion-free. Reaching a 30% gradient share would
+    have needed weight ~2249, a number that is an artefact of r0 and would have
+    to be retuned every time r0 moved. Normalised, the gradient norm is ~0.51
+    against CD's 0.72, so weights of 0.1-1 mean what they look like, and r0 and
+    the weight are independent knobs.
     """
     n = pred.shape[1]
     # Neighbour SELECTION is chunked and gradient-free. A full (B,N,N) matrix is
@@ -255,7 +268,8 @@ def repulsion_loss(pred, r0, k=4):
     # touches the (B,N,N) matrix -- same two-stage trick as `_min_dists`.
     d = tf.sqrt(tf.maximum(
         tf.reduce_sum(tf.square(tf.expand_dims(pred, 2) - nb), axis=-1), EPS))
-    return tf.reduce_mean(tf.square(tf.maximum(0.0, r0 - d)))
+    shortfall = tf.maximum(0.0, r0 - d) / tf.maximum(r0, EPS)   # in [0,1]
+    return tf.reduce_mean(tf.square(shortfall))
 
 
 def make_clump_metric(thresh, n_sample=512):
