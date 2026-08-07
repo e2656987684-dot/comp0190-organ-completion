@@ -145,6 +145,58 @@ def calc_cd(pred, gt, return_raw=False):
     return cd_p, cd_t
 
 
+def calc_f1(pred, gt, threshold=0.05):
+    """F-score at a distance threshold, the metric the source paper reports.
+
+    Returns (f1, precision, recall), each (B,).
+      precision = fraction of PREDICTED points with a ground-truth point within
+                  `threshold` -- "how much of what I drew is real"
+      recall    = fraction of GROUND-TRUTH points with a predicted point within
+                  `threshold` -- "how much of the real thing did I cover"
+
+    `threshold` is in NORMALISED units, matching the source paper's Table 1/2
+    (F-score@0.05 and @0.03). At this dataset's mean radius of 103.8 mm those
+    are 5.19 mm and 3.11 mm. Reporting both lets our numbers sit next to their
+    Table 2 (the 4,800-shape run), which is the closest analogue to this setting.
+
+    Unlike Chamfer this says WHERE the error lives: a low precision with high
+    recall means spurious points off the surface, the reverse means an
+    incomplete reconstruction. Chamfer averages the two failure modes together.
+    """
+    dist1, dist2, _, _ = _min_dists(gt, pred)          # gt->pred, pred->gt
+    recall = tf.reduce_mean(tf.cast(dist1 < threshold, tf.float32), axis=1)
+    precision = tf.reduce_mean(tf.cast(dist2 < threshold, tf.float32), axis=1)
+    f1 = 2 * precision * recall / tf.maximum(precision + recall, EPS)
+    return f1, precision, recall
+
+
+def calc_hausdorff(pred, gt, percentile=95.0):
+    """Symmetric Hausdorff distance, in NORMALISED units. (B,)
+
+    Returns the `percentile`-th percentile of each direction's nearest-neighbour
+    distances, then the max of the two. Defaults to 95 rather than 100 because
+    the true Hausdorff distance is a single worst point and is dominated by one
+    outlier -- medical shape papers almost always report HD95 for that reason.
+
+    Worth reporting alongside Chamfer because it measures the WORST-CASE gap,
+    which Chamfer's mean hides. For implant design a 6 mm average with one 15 mm
+    hole is not clinically equivalent to a uniform 6 mm error.
+    """
+    dist1, dist2, _, _ = _min_dists(gt, pred)
+    q = percentile / 100.0
+    h1 = tfp_percentile(dist1, q)
+    h2 = tfp_percentile(dist2, q)
+    return tf.maximum(h1, h2)
+
+
+def tfp_percentile(x, q):
+    """Per-row quantile of a (B,N) tensor, without a tensorflow_probability dep."""
+    n = tf.shape(x)[-1]
+    k = tf.maximum(tf.cast(tf.math.ceil(tf.cast(n, tf.float32) * q), tf.int32), 1)
+    # top_k of the smallest k values -> the k-th smallest is the q-quantile
+    return -tf.math.top_k(-x, k=k).values[:, -1]
+
+
 def _dcd_from_raw(pred, gt, dist1, dist2, idx1, idx2, alpha=1.0, n_lambda=1.0):
     """DCD's density-weighted part, given distances that were already computed."""
     n_pred = tf.shape(pred)[1]
