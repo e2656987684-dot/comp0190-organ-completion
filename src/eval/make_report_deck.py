@@ -190,32 +190,51 @@ def main():
             "neighbour does not already cover.", {"size": 14})],
           size=15, space=6)
 
-    # ==================================================== 4. DCD blind spot
-    s = _slide(prs, "DCD's blind spot")
-    _text(s, Inches(0.65), Inches(1.15), Inches(12.1), Inches(1.0),
-          [("The obvious response is to lean harder on DCD, the density-aware Chamfer "
-            "distance the original project trains with. Two experiments on its "
-            "hyper-parameters moved almost nothing. This is why.", {})],
-          size=15)
-    _text(s, Inches(0.65), Inches(2.05), Inches(12.1), Inches(0.5),
-          "DCD  =  1 − exp(−α·d) · 1 / count λ", size=23, bold=True, color=ACCENT,
-          align=PP_ALIGN.CENTER)
-    _text(s, Inches(1.4), Inches(2.62), Inches(10.5), Inches(0.6),
-          "count is how many ground-truth points match the same prediction. It comes "
-          "from argmin — piecewise constant — so its gradient with respect to point "
-          "position is exactly zero. Verified: TensorFlow returns None for that path.",
-          size=14, color=MUTED, align=PP_ALIGN.CENTER)
-    _picture(s, "dcd_blindspot.png", Inches(3.5), height=Inches(2.15))
-    _text(s, Inches(0.9), Inches(5.85), Inches(11.5), Inches(1.2),
-          [("DCD can re-weight Chamfer's gradients; it can never push two predicted "
-            "points apart. The case above is invisible to it — two coincident "
-            "predictions matched by different ground-truth points both have count = 1, "
-            "so nothing is charged, and that is the dominant form of the clumping here.",
-            {}),
-           ("Consequence: tuning DCD was never going to fix density, and a repulsion "
-            "term is not redundant with it — it supplies the gradient DCD structurally "
-            "lacks.", {"bold": True, "color": WARN, "size": 14})],
-          size=14, space=7, align=PP_ALIGN.CENTER)
+    # ============================================ 4. Loss experiments + why
+    s = _slide(prs, "Loss experiments")
+    _text(s, Inches(0.7), Inches(1.15), Inches(5.9), Inches(0.35),
+          "What I tried", size=17, bold=True, color=ACCENT)
+    _text(s, Inches(0.7), Inches(1.6), Inches(5.8), Inches(1.1),
+          "The obvious response to a density problem is to lean harder on DCD — the "
+          "density-aware Chamfer distance the original project trains with. It has two "
+          "knobs, and I swept both.", size=14.5)
+    _table(s, Inches(0.7), Inches(2.75), Inches(5.9), Inches(1.6),
+           [["", "CD_t", "clumped", "CV"],
+            ["baseline", f"{g('baseline','CD_t_mm'):.2f}",
+             f"{g('baseline','clump_%'):.1f}%", f"{g('baseline','spacing_CV'):.3f}"],
+            ["weight 1→3", f"{g('dcd_w3','CD_t_mm'):.2f}",
+             f"{g('dcd_w3','clump_%'):.1f}%", f"{g('dcd_w3','spacing_CV'):.3f}"],
+            ["lambda 1→2", f"{g('dcd_l2','CD_t_mm'):.2f}",
+             f"{g('dcd_l2','clump_%'):.1f}%", f"{g('dcd_l2','spacing_CV'):.3f}"]],
+           col_w=[Inches(2.0), Inches(1.3), Inches(1.4), Inches(1.2)], size=13)
+    _text(s, Inches(0.7), Inches(4.5), Inches(5.8), Inches(2.4),
+          [("Raising the weight trades accuracy for density at a poor rate — 2.8 points "
+            "of clumping for 0.37 mm of Chamfer, and clumping is still 10% against "
+            "ground truth's 0%. Raising lambda, which targets the density factor "
+            "specifically, moves density almost not at all.", {}),
+           ("Both were dead ends. The question is whether I swept badly or whether the "
+            "loss cannot do this — and that is answerable.", {"color": MUTED,
+                                                              "size": 14})],
+          size=14.5, space=9)
+
+    _text(s, Inches(7.15), Inches(1.15), Inches(5.5), Inches(0.35),
+          "Why it could never work", size=17, bold=True, color=WARN)
+    _text(s, Inches(7.15), Inches(1.62), Inches(5.5), Inches(0.5),
+          "DCD  =  1 − exp(−α·d) · 1 / count λ", size=19, bold=True, color=ACCENT)
+    _text(s, Inches(7.15), Inches(2.25), Inches(5.5), Inches(4.6),
+          [("count is how many ground-truth points match the same prediction. It comes "
+            "from argmin — a piecewise-constant function — so its gradient with respect "
+            "to point position is exactly zero. Verified directly: TensorFlow returns "
+            "None for that path.", {}),
+           ("So DCD can re-weight Chamfer's gradients. It can never apply a force that "
+            "pushes two predicted points apart.", {"bold": True}),
+           ("Worse, it is blind to the dominant case: two predictions sitting on top of "
+            "each other, each matched by a different ground-truth point, both have "
+            "count = 1 and draw no penalty at all.", {}),
+           ("This says the sweeps failed for a structural reason, not a tuning one — "
+            "and that a repulsion term is not redundant with DCD, it supplies exactly "
+            "the gradient DCD lacks.", {"color": WARN, "bold": True, "size": 14})],
+          size=14.5, space=9)
 
     # ======================================================= 5. What worked
     s = _slide(prs, "What worked")
@@ -279,9 +298,9 @@ def main():
            [[r] + [f"{g(r,c):.3f}" if c != "clump_%" else f"{g(r,c):.2f}%"
                    for c in ["CD_t_mm", "HD95_mm", "F1@0.05", "F1@0.03", "DCD",
                              "clump_%", "spacing_CV"]]
-            for r in ["baseline", "dcd_l2", "lr_fix", "rep_w05"]] +
+            for r in ["baseline", "dcd_w3", "dcd_l2", "lr_fix", "rep_w05"]] +
            [["ground truth", "—", "—", "—", "—", "—", "0.00%", "0.145"]],
-           col_w=[Inches(2.2)] + [Inches(1.385)] * 7, highlight_row=4)
+           col_w=[Inches(2.2)] + [Inches(1.385)] * 7, highlight_row=5)
     _text(s, Inches(0.7), Inches(4.05), Inches(11.9), Inches(0.4),
           "F-score against the source paper — same metric definition, different datasets",
           size=15, bold=True)

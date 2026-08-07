@@ -25,6 +25,7 @@ import pandas as pd
 
 RUNS = [
     ("baseline", "baseline_es20"),
+    ("dcd_w3", "msn_skullfix/dcd_w3"),
     ("dcd_l2", "msn_skullfix/dcd_l2"),
     ("lr_fix", "msn_skullfix/lr_fix_only"),
     ("rep_w05", "msn_skullfix/rep_w05"),

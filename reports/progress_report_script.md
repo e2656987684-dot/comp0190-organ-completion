@@ -4,15 +4,14 @@ Bilingual notes for `progress_report.pptx` (8 slides). One section per slide.
 每页一节，中英对照。
 
 **Figure provenance / 图片来源说明.** All numbers and all point clouds come from
-the real runs in `experiments/`, via `src/eval/make_report_figures.py`. Two
-compositions are new code written for this deck rather than screenshots of an
-existing notebook: `completion.png` (grey base with the defect region
-highlighted) and `dcd_blindspot.png`, which is a hand-drawn schematic and not
-data at all. Everything else — curves, density panels, meshes, tables — is the
+the real runs in `experiments/`, via `src/eval/make_report_figures.py`. One
+composition is new code written for this deck rather than a screenshot of an
+existing notebook: `completion.png`, the grey base with the defect region
+highlighted. Everything else — curves, density panels, meshes, tables — is the
 same code the notebooks call.
-数字和点云全部来自 `experiments/` 里的真实 run。有两张图的**构图**是为这份汇报新写的，
-不是现有 notebook 的截图：`completion.png`，以及 `dcd_blindspot.png`（那是手画的示意图，
-根本不是数据）。其余的曲线、密度图、mesh、表格都是 notebook 调用的同一套代码。
+数字和点云全部来自 `experiments/` 里的真实 run。只有一张图的**构图**是为这份汇报新写的，
+不是现有 notebook 的截图：`completion.png`（灰底 + 高亮缺损区）。其余的曲线、密度图、
+mesh、表格都是 notebook 调用的同一套代码。
 
 ---
 
@@ -139,43 +138,61 @@ rather than what the renders looked like.
 
 ---
 
-## Slide 4 — DCD's blind spot / DCD 的盲区
+## Slide 4 — Loss experiments / 损失函数实验
 
-**EN.** The obvious response is to lean harder on DCD, the density-aware Chamfer
-distance the original project trains with. I ran two experiments on its
-hyper-parameters and both moved almost nothing. This slide is why.
+*Two halves: what I tried, and why it could never have worked.*
+*两半:做了什么,以及为什么它注定不成。*
 
-DCD multiplies a distance factor by a density factor — one over count, raised to
-lambda. Count is how many ground-truth points match the same predicted point, and
-it comes from an argmin, a piecewise-constant function. Its gradient with respect
-to point position is exactly zero. I verified that directly: TensorFlow returns
-None for that path.
+**EN — left half.** The obvious response to a density problem is to lean harder
+on DCD, the density-aware Chamfer distance the original project trains with. It
+has two knobs and I swept both.
+
+Raising the weight from 1 to 3 does move density — clumping 12.8 to 10.0% — but
+it costs 0.37 mm of Chamfer distance to get there, and 10% is still a long way
+from ground truth's 0%. The exchange rate is bad enough that pushing further
+would break shape accuracy before it fixed density. Raising lambda, which targets
+the density factor specifically rather than the whole term, moves density almost
+not at all: 12.8 to 12.5%.
+
+Both were dead ends. The honest question at that point is whether I swept badly
+or whether the loss simply cannot do this — and that turns out to be answerable.
+
+**EN — right half.** DCD multiplies a distance factor by a density factor: one
+over count, raised to lambda. Count is how many ground-truth points match the
+same predicted point, and it comes from an argmin — a piecewise-constant
+function. Its gradient with respect to point position is exactly zero. I verified
+that directly: TensorFlow returns None for that path.
 
 So DCD can re-weight the Chamfer gradients, but it can never apply a force that
-pushes two predicted points apart. The diagram shows the case it is completely
-blind to: two predictions sitting on top of each other, each matched by a
-different ground-truth point. Count is one for both, so DCD charges nothing at
-all — and that is the dominant form of the clumping I measured.
+pushes two predicted points apart. And it is blind to the dominant case: two
+predictions sitting on top of each other, each matched by a different ground-truth
+point, both have count = 1 and draw no penalty at all.
 
-Two consequences. Tuning DCD's hyper-parameters was never going to solve density,
-which explains why those experiments failed rather than my having run them badly.
-And a repulsion term is not redundant with DCD — it supplies exactly the gradient
-DCD structurally lacks.
+That answers the question. The sweeps failed for a structural reason, not a
+tuning one. It also tells me a repulsion term is not redundant with DCD — it
+supplies exactly the gradient DCD lacks.
 
-**中文.** 最直接的反应是加大 DCD 的力度——原项目就是用这个密度感知 Chamfer 距离训练的。
-我在它的超参上做了两次实验,都几乎没动。这一页解释为什么。
+**中文——左半.** 面对密度问题,最直接的反应是加大 DCD 的力度——原项目就是用这个
+密度感知 Chamfer 距离训练的。它有两个旋钮,我都扫了。
 
-DCD 是距离因子乘以密度因子,也就是 1 除以 count 的 λ 次方。count 是有多少个真值点匹配到
-同一个预测点,而它来自 argmin,一个分段常数函数。**它对点位置的梯度恰好为零**。
-我直接验证过:TensorFlow 在这条路径上返回 None。
+把权重从 1 提到 3 **确实**能动密度——扎堆率 12.8% 降到 10.0%——但代价是 Chamfer 距离
+差了 0.37 毫米,而 10% 离真值的 0% 还差得远。这个兑换比差到:再往上推,形状精度会先崩,
+密度还没修好。而提高 lambda——它针对的是密度因子本身而不是整个项——密度几乎没动,
+12.8% 到 12.5%。
+
+两条都是死路。这时候诚实的问题是:**是我扫得不好,还是这个损失根本做不到?**
+——而这个问题是可以回答的。
+
+**中文——右半.** DCD 是距离因子乘以密度因子:1 除以 count 的 λ 次方。
+count 是有多少个真值点匹配到同一个预测点,它来自 argmin,一个分段常数函数。
+**它对点位置的梯度恰好为零**。我直接验证过:TensorFlow 在这条路径上返回 None。
 
 所以 DCD 只能给 Chamfer 的梯度重新加权,**永远无法产生把两个预测点推开的力**。
-图里画的是它完全看不见的情况:两个预测点重合在一起,各自被不同的真值点匹配,
-两边的 count 都是 1,DCD 一分钱都不罚——而这正是我测到的扎堆的主要形态。
+而且它对最主要的那种情况是瞎的:两个预测点重合在一起、各自被不同的真值点匹配,
+两边 count 都是 1,一分钱都不罚。
 
-两个后果。第一,调 DCD 超参本来就解决不了密度问题,这说明那几次实验失败**不是我做砸了**,
-而是方向上就不可能。第二,repulsion 项和 DCD **不重复**,它提供的正是 DCD 结构上缺的
-那个梯度。
+这就回答了前面的问题:**那两次扫参失败是结构性原因,不是调参没调好。**
+它同时说明 repulsion 项和 DCD **不重复**——它提供的正是 DCD 缺的那个梯度。
 
 ---
 
