@@ -214,3 +214,8 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+# NOTE: reports/figures/pred_vs_gt.png is NOT generated here. It is exported by
+# hand from MSN_train_skullfix.ipynb's show_pred_vs_gt cell (plotly's camera icon)
+# and copied in, because the interactive figure is rotated to a viewpoint worth
+# keeping and this script has no way to know which one that was.

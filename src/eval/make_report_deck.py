@@ -110,94 +110,106 @@ def main():
 
     # ============================================================== 1. Task
     s = _slide(prs, "Task and baseline")
-    _text(s, Inches(0.65), Inches(1.2), Inches(5.4), Inches(4.6),
-          [("Skull completion: 4,096 points of a defective skull in, "
-            "6,144 points of a complete skull out. SkullFix, 100 skulls, "
-            "80 train / 20 validation — the same split for every run reported here.",
-            {}),
-           ("Before improving anything I needed something to compare against, so I ran "
-            "the authors' released weights on my own data: same validation skulls, "
-            "same metric definitions, same aligned point clouds.", {}),
-           ("The figure marks the missing region in red on the ground truth, and in "
-            "blue the points my model places inside that same region. Grey is surface "
-            "that was already in the input.", {"color": MUTED, "size": 14})],
-          size=15, space=11)
-    _picture(s, "completion.png", Inches(1.35), height=Inches(3.0), cx=Inches(9.6))
-    _table(s, Inches(6.35), Inches(4.6), Inches(6.4), Inches(1.0),
+    _text(s, Inches(0.65), Inches(1.25), Inches(5.5), Inches(4.4),
+          [("Skull completion: 4,096 points of a defective skull in, 6,144 points of a "
+            "complete skull out.", {}),
+           ("SkullFix, 100 skulls, 80 train / 20 validation — the same split for every "
+            "run reported here.", {}),
+           ("For a reference point I ran the authors' released weights on my own data: "
+            "same validation skulls, same metrics, same aligned point clouds.", {})],
+          size=15, space=13)
+    _picture(s, "pred_vs_gt.png", Inches(1.15), height=Inches(3.7), cx=Inches(9.5))
+    _table(s, Inches(0.65), Inches(3.6), Inches(5.6), Inches(1.0),
            [["", "CD_t (mm)", "DCD"],
-            ["Released pretrained weights", "10.71", "1.428"],
-            ["This work, trained from scratch", f"{g('rep_w05','CD_t_mm'):.2f}",
-             f"{g('rep_w05','DCD'):.3f}"]],
-           col_w=[Inches(3.4), Inches(1.5), Inches(1.5)], highlight_row=2)
-    _text(s, Inches(0.65), Inches(5.95), Inches(12.1), Inches(1.0),
+            ["Pretrained weights", "10.71", "1.428"],
+            ["This work", f"{g('rep_w05','CD_t_mm'):.2f}", f"{g('rep_w05','DCD'):.3f}"]],
+           col_w=[Inches(2.6), Inches(1.5), Inches(1.5)], highlight_row=2)
+    _text(s, Inches(0.65), Inches(5.35), Inches(12.1), Inches(1.5),
           [("Sanity check.", {"bold": True, "color": ACCENT}),
-           ("The source paper reports DCD = 1.41269 on its own validation set; the same "
-            "weights measure 1.42772 on my data — a 1% match. That confirms the metric "
-            "port and the weight loading, and it also frames the comparison honestly: "
-            "their model has not failed on skulls, it performs here almost exactly as it "
-            "does on its own data. The gain comes from specialisation.", {})],
-          size=14, space=4)
+           ("The source paper reports DCD = 1.41269 on its own validation set. The same "
+            "weights measure 1.42772 on my data — a 1% match, which confirms the metric "
+            "implementation and the weight loading.", {}),
+           ("It also frames the comparison honestly: their model has not failed on "
+            "skulls. It performs here almost exactly as it does on its own data, so the "
+            "gain comes from specialisation.", {"color": MUTED, "size": 14})],
+          size=15, space=6)
 
     # ================================================== 2. Evaluation tooling
     s = _slide(prs, "Evaluation tooling")
-    _text(s, Inches(0.65), Inches(1.2), Inches(5.7), Inches(4.8),
+    _text(s, Inches(0.65), Inches(1.25), Inches(5.7), Inches(4.6),
           [("Scatter plots cannot show whether a predicted surface is any good, so I "
-            "built a reconstruction path: point cloud → KD-tree distance field → "
-            "Gaussian blur → marching cubes → largest component → Taubin smoothing. "
-            "The original repository has no such code.", {}),
-           ("Poisson reconstruction was deliberately avoided: it needs per-point "
-            "normals, which a predicted cloud does not have and which are unreliable on "
-            "a thin bone shell, and it tends to close the defect — the one feature being "
-            "inspected.", {}),
-           ("Two rules that came out of it:", {"bold": True}),
-           ("Meshes are for looking, never for metrics — reconstruction pushes the "
+            "built a reconstruction path: point cloud → distance field → marching cubes "
+            "→ Taubin smoothing. The original repository has none of this.", {}),
+           ("Poisson reconstruction, the usual choice, was deliberately avoided. It "
+            "needs per-point normals, which are unreliable on a thin bone shell, and it "
+            "tends to close holes — the one feature being inspected.", {}),
+           ("Two rules that came out of it:", {"bold": True, "space": 3}),
+           ("Meshes are for looking, never for metrics. Reconstruction pushes the "
             "surface outward by a median of 5.3 mm, the same order as the model's own "
-            "error. And the parameters are locked module-level constants, because every "
-            "knob changes how smooth a surface looks and per-figure tuning would "
-            "disguise itself as model improvement.", {"size": 14, "color": MUTED})],
-          size=15, space=10)
+            "error.", {"size": 14, "color": MUTED, "space": 3}),
+           ("Reconstruction parameters are locked. Every knob changes how smooth a "
+            "surface looks, so per-figure tuning would disguise itself as model "
+            "improvement.", {"size": 14, "color": MUTED})],
+          size=15, space=11)
     _picture(s, "mesh.png", Inches(1.35), height=Inches(2.9), cx=Inches(9.7))
     _text(s, Inches(6.6), Inches(4.5), Inches(6.2), Inches(2.4),
           [("What a mesh cannot show", {"bold": True, "color": WARN, "size": 16}),
-           ("These two surfaces look alike, and the measurements agree: deviation p95 "
-            "6.56 mm against 5.59 mm across the whole comparison. The real difference "
-            "between models is in how the points are distributed — which a shaded "
-            "surface hides completely.", {}),
-           ("That is why the diagnostics on the next slides are point clouds, not "
-            "meshes.", {"color": MUTED, "size": 14})],
-          size=15, space=8)
+           ("These two surfaces look alike, and the measurements agree. The real "
+            "difference between my models is in how the points are distributed — which "
+            "a shaded surface hides completely.", {}),
+           ("That is why the diagnostics from here on are point clouds, not meshes.",
+            {"color": MUTED, "size": 14})],
+          size=15, space=9)
 
     # ========================================================== 3. Diagnosis
-    s = _slide(prs, "Diagnosis")
-    _text(s, Inches(0.65), Inches(1.15), Inches(12.1), Inches(1.1),
-          [("The plan — and my supervisor's suggestion — was a smoothness penalty: the "
-            "predicted surface looked bumpy. I measured how bumpy before implementing "
-            "it, and the measurement changed the plan.", {})],
-          size=15)
-    _picture(s, "density_problem.png", Inches(2.25), height=Inches(2.9))
-    _text(s, Inches(0.9), Inches(5.25), Inches(5.5), Inches(1.9),
-          [("Surface roughness — no gap", {"bold": True, "size": 17}),
-           ("Ground truth 0.736, prediction 0.760. Essentially equal, so a smoothness "
-            "penalty has nothing to win. Note this metric is itself contaminated: the "
-            "skull is a shell whose inner and outer surfaces sit 5–7 mm apart, which a "
-            "local plane fit cannot separate.", {"size": 14})],
-          size=15, space=6)
-    _text(s, Inches(6.95), Inches(5.25), Inches(5.5), Inches(1.9),
-          [("Point spacing — a real gap", {"bold": True, "size": 17, "color": WARN}),
-           ("12.8% of predicted points sit within 2 mm of a neighbour; ground truth, "
-            "being farthest-point sampled, has none at all. Spacing CV 0.389 against "
-            "0.145. Those clumped points are wasted — they cover no surface a "
-            "neighbour does not already cover.", {"size": 14})],
-          size=15, space=6)
+    s = _slide(prs, "Change of direction")
+    _text(s, Inches(0.7), Inches(1.2), Inches(5.8), Inches(0.9),
+          [("The original plan", {"bold": True, "size": 17, "color": ACCENT}),
+           ("Add a smoothness penalty — the predicted surface looked bumpy in the "
+            "renders. I measured it first, and three things argued against it.", {})],
+          size=15, space=8)
+    _text(s, Inches(0.7), Inches(2.35), Inches(5.8), Inches(4.4),
+          [("1.  No measurable difference to exploit", {"bold": True}),
+           ("Local roughness came out at 0.736 for ground truth against 0.760 for the "
+            "prediction.", {"size": 14, "color": MUTED}),
+           ("2.  The measurement itself is unreliable", {"bold": True}),
+           ("A skull is a thin shell, inner and outer surfaces 5–7 mm apart, and a local "
+            "surface fit cannot tell that apart from real roughness. Without a "
+            "trustworthy measure I could not have judged whether the change helped.",
+            {"size": 14, "color": MUTED}),
+           ("3.  Overdoing it would cost accuracy", {"bold": True}),
+           ("Pushing past the ground truth's own smoothness makes the prediction "
+            "smoother than the target, which the distance metrics count as error.",
+            {"size": 14, "color": MUTED})],
+          size=15, space=7)
+
+    _text(s, Inches(7.0), Inches(1.2), Inches(5.6), Inches(1.4),
+          [("What the data pointed at instead", {"bold": True, "size": 17,
+                                                 "color": WARN}),
+           ("Point spacing. 12.8% of predicted points sit within 2 mm of a neighbour; "
+            "ground truth, being farthest-point sampled, has none at all.", {})],
+          size=15, space=8)
+    _table(s, Inches(7.0), Inches(2.75), Inches(5.6), Inches(1.0),
+           [["", "prediction", "ground truth"],
+            ["points closer than 2 mm", f"{g('baseline','clump_%'):.1f}%", "0.0%"],
+            ["spacing CV", f"{g('baseline','spacing_CV'):.3f}", "0.145"]],
+           col_w=[Inches(2.6), Inches(1.5), Inches(1.5)])
+    _text(s, Inches(7.0), Inches(4.1), Inches(5.6), Inches(2.7),
+          [("Those clumped points are wasted — they cover no surface a neighbour does "
+            "not already cover. Unlike roughness this is unambiguous, and it is what the "
+            "rest of this work goes after.", {}),
+           ("Worth noting in advance: fixing the density also improved the surface. "
+            "Deviation p95 fell from 6.56 to 5.59 mm without any smoothness term at all.",
+            {"color": ACCENT, "size": 14})],
+          size=15, space=10)
 
     # ============================================ 4. Loss experiments + why
     s = _slide(prs, "Loss experiments")
     _text(s, Inches(0.7), Inches(1.15), Inches(5.9), Inches(0.35),
           "What I tried", size=17, bold=True, color=ACCENT)
-    _text(s, Inches(0.7), Inches(1.6), Inches(5.8), Inches(1.1),
-          "The obvious response to a density problem is to lean harder on DCD — the "
-          "density-aware Chamfer distance the original project trains with. It has two "
-          "knobs, and I swept both.", size=14.5)
+    _text(s, Inches(0.7), Inches(1.6), Inches(5.8), Inches(1.0),
+          "The obvious response is to lean harder on DCD — the density-aware loss the "
+          "original project trains with. It has two knobs, and I swept both.", size=14.5)
     _table(s, Inches(0.7), Inches(2.75), Inches(5.9), Inches(1.6),
            [["", "CD_t", "clumped", "CV"],
             ["baseline", f"{g('baseline','CD_t_mm'):.2f}",
@@ -207,34 +219,34 @@ def main():
             ["lambda 1→2", f"{g('dcd_l2','CD_t_mm'):.2f}",
              f"{g('dcd_l2','clump_%'):.1f}%", f"{g('dcd_l2','spacing_CV'):.3f}"]],
            col_w=[Inches(2.0), Inches(1.3), Inches(1.4), Inches(1.2)], size=13)
-    _text(s, Inches(0.7), Inches(4.5), Inches(5.8), Inches(2.4),
-          [("Raising the weight trades accuracy for density at a poor rate — 2.8 points "
-            "of clumping for 0.37 mm of Chamfer, and clumping is still 10% against "
-            "ground truth's 0%. Raising lambda, which targets the density factor "
-            "specifically, moves density almost not at all.", {}),
-           ("Both were dead ends. The question is whether I swept badly or whether the "
-            "loss cannot do this — and that is answerable.", {"color": MUTED,
-                                                              "size": 14})],
-          size=14.5, space=9)
+    _text(s, Inches(0.7), Inches(4.55), Inches(5.8), Inches(2.3),
+          [("Raising the weight buys density at a poor rate — 2.8 points of clumping for "
+            "0.37 mm of accuracy, and 10% is still far from 0%. Raising lambda, which "
+            "targets density specifically, moves it almost not at all.", {}),
+           ("Both were dead ends. The question is whether I swept them badly, or whether "
+            "the loss simply cannot do this.", {"color": MUTED, "size": 14})],
+          size=14.5, space=10)
 
     _text(s, Inches(7.15), Inches(1.15), Inches(5.5), Inches(0.35),
           "Why it could never work", size=17, bold=True, color=WARN)
-    _text(s, Inches(7.15), Inches(1.62), Inches(5.5), Inches(0.5),
-          "DCD  =  1 − exp(−α·d) · 1 / count λ", size=19, bold=True, color=ACCENT)
-    _text(s, Inches(7.15), Inches(2.25), Inches(5.5), Inches(4.6),
-          [("count is how many ground-truth points match the same prediction. It comes "
-            "from argmin — a piecewise-constant function — so its gradient with respect "
-            "to point position is exactly zero. Verified directly: TensorFlow returns "
-            "None for that path.", {}),
-           ("So DCD can re-weight Chamfer's gradients. It can never apply a force that "
-            "pushes two predicted points apart.", {"bold": True}),
-           ("Worse, it is blind to the dominant case: two predictions sitting on top of "
-            "each other, each matched by a different ground-truth point, both have "
-            "count = 1 and draw no penalty at all.", {}),
-           ("This says the sweeps failed for a structural reason, not a tuning one — "
-            "and that a repulsion term is not redundant with DCD, it supplies exactly "
-            "the gradient DCD lacks.", {"color": WARN, "bold": True, "size": 14})],
-          size=14.5, space=9)
+    _text(s, Inches(7.15), Inches(1.6), Inches(5.5), Inches(5.2),
+          [("DCD  =  1 − exp(−α·d) · 1 / count^λ", {"size": 15, "color": ACCENT,
+                                                    "bold": True}),
+           ("The density part of DCD works by counting how many ground-truth points end "
+            "up assigned to the same prediction. A count is a whole number: nudge a "
+            "point slightly and it usually does not change at all. So it tells the "
+            "optimiser nothing about which direction to move — the gradient is not small, "
+            "it is absent. I checked, and TensorFlow returns nothing for it.", {}),
+           ("DCD can therefore make Chamfer care more about some points than others, "
+            "but it can never push two predictions apart.", {"bold": True}),
+           ("It is also blind to the most common case: two predictions sitting on top of "
+            "each other, each claimed by a different ground-truth point. Both counts are "
+            "1, so nothing is charged.", {}),
+           ("Repulsion  =  max(0, r₀ − d)²", {"size": 15, "color": ACCENT, "bold": True}),
+           ("If two predicted points are closer than r₀, push them apart; once they are "
+            "r₀ apart, do nothing. That is the force DCD structurally lacks — so the two "
+            "are not redundant.", {"color": WARN, "size": 14})],
+          size=14, space=8)
 
     # ======================================================= 5. What worked
     s = _slide(prs, "What worked")
@@ -245,20 +257,20 @@ def main():
            ("The learning-rate scheduler and early stopping both watch validation loss, "
             "but the scheduler's patience was 40 against early stopping's 20 — so "
             "training always ended first and the learning rate had never once been "
-            "reduced, in any experiment. Every earlier run trained at a flat rate.", {}),
-           ("Fixing it: CD_t 7.22 → 6.40 mm, and training runs to 279 epochs instead of "
-            "133. The dotted lines mark each drop.", {"size": 14, "color": MUTED})],
-          size=14.5, space=7)
+            "reduced, in any experiment.", {}),
+           ("Fixing it: CD_t 7.22 → 6.40 mm, training runs to 279 epochs instead of 133. "
+            "The dotted lines mark each drop.", {"size": 14, "color": MUTED})],
+          size=14.5, space=9)
     _text(s, Inches(7.1), Inches(3.95), Inches(5.7), Inches(2.9),
           [("Repulsion loss", {"bold": True, "size": 16, "color": ACCENT}),
-           ("A hinge penalty on predicted points closer than 2 mm to each other. Its "
-            "gradient vanishes exactly once they are far enough apart, so it stops "
-            "competing with Chamfer instead of pushing indefinitely — and the threshold "
-            "is a distance, read off the ground truth rather than tuned blind.", {}),
+           ("Points closer than 2 mm to each other get pushed apart, and the penalty "
+            "switches off entirely once they are far enough — so it stops competing with "
+            "Chamfer rather than pushing indefinitely. The 2 mm threshold was read off "
+            "the ground truth's own spacing.", {}),
            ("Attribution: a third run with the learning-rate fix but no repulsion "
-            "isolates the two. All of the CD_t gain is the learning rate, 6.40 against "
+            "separates the two. All of the CD_t gain is the learning rate — 6.40 against "
             "6.41. Repulsion contributes density only.", {"size": 14, "color": MUTED})],
-          size=14.5, space=7)
+          size=14.5, space=9)
 
     # =========================================================== 6. Density
     s = _slide(prs, "Density")
