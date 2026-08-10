@@ -330,8 +330,17 @@ def main():
         tf.keras.callbacks.ModelCheckpoint(
             os.path.join(out_dir, "best.h5"),
             monitor="val_loss", save_best_only=True, save_weights_only=True, verbose=0),
+        # min_delta=0, not Keras's default 1e-4. That default is an ABSOLUTE
+        # threshold, so what counts as "no improvement" depends on how big the
+        # loss happens to be: cd_dcd sits near 1.0 and improves 2-4e-4 per epoch
+        # late on, which clears 1e-4 -- but plain `cd` sits near 0.07, improves
+        # ~1.5e-5, and would be declared stalled every single epoch, collapsing
+        # the LR to min_lr and quietly wrecking any run that changes --loss.
+        # Zero is the only scale-free choice, and it matches EarlyStopping, which
+        # has always used 0.
         tf.keras.callbacks.ReduceLROnPlateau(
-            monitor="val_loss", factor=0.5, patience=lr_patience, min_lr=1e-6, verbose=1),
+            monitor="val_loss", factor=0.5, patience=lr_patience, min_lr=1e-6,
+            min_delta=0.0, verbose=1),
         tf.keras.callbacks.CSVLogger(os.path.join(out_dir, "history.csv")),
     ]
     if args.early_stop_patience > 0:
