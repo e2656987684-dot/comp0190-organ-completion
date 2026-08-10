@@ -70,6 +70,7 @@ LOSS
 
 from __future__ import annotations
 
+import functools
 from dataclasses import dataclass
 
 import numpy as np
@@ -397,8 +398,14 @@ def make_loss(name, dcd_weight=1.0, n_lambda=1.0,
     if repulsion_weight <= 0.0:
         # Return the bare base loss rather than a wrapper that adds 0.0 -- keeps
         # the graph (and any saved run) identical to before this feature existed.
-        base.__name__ = tag
-        return base
+        # Wrapped in functools.partial rather than renamed in place: `base` is the
+        # module-level `chamfer_loss` / `dcd_loss` for those two names, so
+        # assigning to its __name__ renamed the global function for the rest of
+        # the process and the next make_loss call in the same session inherited
+        # the wrong label.
+        named = functools.wraps(base)(lambda y_true, y_pred: base(y_true, y_pred))
+        named.__name__ = tag
+        return named
 
     def loss(y_true, y_pred):
         return base(y_true, y_pred) + repulsion_weight * repulsion_loss(
