@@ -29,6 +29,7 @@ RUNS = [
     ("dcd_l2", "msn_skullfix/dcd_l2"),
     ("lr_fix", "msn_skullfix/lr_fix_only"),
     ("rep_w05", "msn_skullfix/rep_w05"),
+    ("cd_rep05", "msn_skullfix/cd_rep05"),
 ]
 # The density figure drops dcd_l2: it is the same story as baseline and a fourth
 # panel only makes each one narrower.
