@@ -99,14 +99,26 @@ echo "=== 完成 ==="
 echo "目标大小: $(du -sh "$DST" 2>/dev/null | cut -f1)"
 
 if [ "$MODE" = "backup" ]; then
-    # 备份完顺手提醒一下 git 那半边 —— 两者互补，只做一个都不算安全
+    # 备份完顺手提醒一下 git 那半边 —— 两者互补，只做一个都不算安全。
+    #
+    # 这里一律用 if 而不是 `[ cond ] && echo`：后者在条件为假时整条语句返回 1，
+    # 而它若是脚本最后一条命令，脚本就以 1 退出，终端画一个红叉。触发条件恰好是
+    # 「全部已提交且全部已推送」，也就是一切正常的时候报错，正好反了。
     cd "$LOCAL"
     dirty=$(git status --porcelain 2>/dev/null | wc -l)
-    [ "$dirty" -gt 0 ] && echo "⚠ 还有 $dirty 个文件未 commit"
+    if [ "$dirty" -gt 0 ]; then
+        echo "⚠ 还有 $dirty 个文件未 commit"
+    fi
     if git rev-parse --abbrev-ref '@{upstream}' > /dev/null 2>&1; then
         ahead=$(git rev-list --count '@{upstream}..HEAD' 2>/dev/null || echo 0)
-        [ "$ahead" -gt 0 ] && echo "⚠ 有 $ahead 个 commit 未 push"
+        if [ "$ahead" -gt 0 ]; then
+            echo "⚠ 有 $ahead 个 commit 未 push"
+        else
+            echo "git: 已全部提交并推送 ✓"
+        fi
     else
         echo "⚠ 当前分支没有上游分支 —— 这些 commit 还只存在于磁盘上，没进 GitHub"
     fi
 fi
+
+exit 0
