@@ -37,6 +37,15 @@ C_SERIES = ["#1565C0", "#E64A19", "#6A1B9A", "#00838F", "#EF6C00", "#37474F"]
 # reports (Table 1/2), so keeping them makes our numbers directly comparable.
 F1_THRESHOLDS = (0.05, 0.03)
 
+# A ground-truth point counts as "in the defect" when the nearest point of the
+# DEFECTIVE INPUT is further away than this, in millimetres. 5 mm sits well clear
+# of the sampling spacing -- measured GT-to-input nearest distance is 2.75 mm at
+# the median (shared surface) against 20.1 mm at p99 (the hole) -- and puts 6.7%
+# of ground-truth points inside the defect, range 4.5-9.3% across the validation
+# skulls. Raising it shrinks the region and makes the metric noisier; lowering it
+# starts admitting shared surface.
+DEFECT_MM = 5.0
+
 
 # --------------------------------------------------------------------------- #
 # loading
@@ -108,7 +117,7 @@ def _dcd_numpy(dist1, dist2, idx1, idx2, n_pred, n_gt, alpha=1.0, n_lambda=1.0):
                  + np.mean(1.0 - np.exp(-dist2 * alpha) * w2))
 
 
-def metrics_from_points(pred, gt, scale_mm):
+def metrics_from_points(pred, gt, scale_mm, inp=None):
     """Every point-cloud metric, from ONE pair of nearest-neighbour lookups.
 
     Deliberately numpy + cKDTree rather than the TensorFlow versions in
@@ -119,6 +128,9 @@ def metrics_from_points(pred, gt, scale_mm):
     against the TF implementations to within 1e-5).
 
     dist1: gt -> pred      dist2: pred -> gt      both in normalised units.
+
+    Pass `inp` (the defective input cloud) to also get the defect-region columns;
+    without it those are simply absent, so existing callers keep working.
     """
     from scipy.spatial import cKDTree
 
@@ -139,6 +151,78 @@ def metrics_from_points(pred, gt, scale_mm):
         out[f"F1@{t:g}"] = 2 * prec * rec / max(prec + rec, 1e-12)
         if t == F1_THRESHOLDS[0]:
             out["precision"], out["recall"] = prec, rec
+
+    if inp is not None:
+        out.update(_defect_metrics(P, G, np.asarray(inp, dtype=np.float64),
+                                   dist1, scale_mm))
+    return out
+
+
+def _defect_metrics(P, G, I, dist1, scale_mm):
+    """The same metrics, restricted to the region the input does not already show.
+
+    WHY: only 6.7% of ground-truth points lie in the defect -- the other 93.3% are
+    surface the model was handed in the input and merely has to reproduce. The
+    whole-cloud numbers are therefore dominated by copying, and a model that
+    reproduced the visible surface perfectly while filling the hole with garbage
+    would still score well. These columns measure the part of the task that is
+    actually hard.
+
+    "In the defect" is decided by ONE rule applied to both clouds: a point is in
+    the defect if the nearest INPUT point is more than DEFECT_MM away. Using the
+    same rule on each side keeps it non-circular -- the alternative, calling a
+    prediction "in the defect" when it is near a defect ground-truth point, would
+    define the prediction's region using the answer.
+
+    Reported per direction rather than summed, because the two mean different
+    things here and only one of them is hard to cheat:
+
+      coverage (gt -> pred)  : of the missing surface, how close is the nearest
+                               predicted point. Cannot be gamed -- ignoring the
+                               hole makes this worse.
+      precision (pred -> gt) : of the points placed in the defect, how close they
+                               are to the real surface (all of it, not just the
+                               defect -- see below). CAN be gamed by placing no
+                               points there at all, which is why n_pred is
+                               reported alongside it.
+
+    n_pred is also worth reading on its own: ground truth puts ~395 points in the
+    defect while the models place ~930 there. The rule catches a shell around the
+    hole, because predictions sit ~6 mm off the surface and drift across the
+    boundary.
+    """
+    from scipy.spatial import cKDTree
+
+    tree_i = cKDTree(I)
+    thr = DEFECT_MM / scale_mm                       # mm -> normalised
+    gt_mask = tree_i.query(G, k=1, workers=-1)[0] > thr
+    pr_mask = tree_i.query(P, k=1, workers=-1)[0] > thr
+
+    out = {"defect_gt_%": 100.0 * gt_mask.mean(),
+           "defect_n_pred": int(pr_mask.sum())}
+    if not gt_mask.any():                            # no hole found: leave blank
+        return {**out, "defect_cov_mm": np.nan, "defect_HD95_mm": np.nan,
+                "defect_prec_mm": np.nan, "defect_F1@0.05": np.nan}
+
+    cov = dist1[gt_mask]                             # reuse: gt -> nearest pred
+    out["defect_cov_mm"] = float(cov.mean()) * scale_mm
+    out["defect_HD95_mm"] = float(np.percentile(cov, 95)) * scale_mm
+
+    if pr_mask.any():
+        # Target is the FULL ground truth, not just its defect points. Restricting
+        # it inflates the number badly (measured 12-16 mm): a predicted point at
+        # the edge of the hole has its nearest real surface just outside the
+        # defect, and excluding those forces it to match something much further
+        # in. The question here is "is this point on the skull at all", and the
+        # skull is all of G.
+        d_pr = cKDTree(G).query(P[pr_mask], k=1, workers=-1)[0]
+        out["defect_prec_mm"] = float(d_pr.mean()) * scale_mm
+        t = F1_THRESHOLDS[0]
+        r, pr = float((cov < t).mean()), float((d_pr < t).mean())
+        out["defect_F1@0.05"] = 2 * pr * r / max(pr + r, 1e-12)
+    else:                                            # nothing placed in the hole
+        out["defect_prec_mm"] = np.nan
+        out["defect_F1@0.05"] = 0.0
     return out
 
 
@@ -189,7 +273,7 @@ def eval_runs(repo, runs, n_skulls=None, device="/GPU:0"):
             for sid, i, p in zip(val, pos, preds):
                 s = float(scales[i])
                 row = {"run": run.label, "id": sid}
-                row.update(metrics_from_points(p, gt[i], s))
+                row.update(metrics_from_points(p, gt[i], s, inp=inputs[i]))
                 st = mv.surface_stats(p, gt[i], s)
                 row["clump_%"] = st["clump_pct"]
                 row["spacing_CV"] = st["spacing_cv"]
@@ -199,7 +283,12 @@ def eval_runs(repo, runs, n_skulls=None, device="/GPU:0"):
 
 
 SUMMARY_COLS = ["CD_t_mm", "HD95_mm", "F1@0.05", "F1@0.03", "DCD", "clump_%", "spacing_CV"]
-LOWER_IS_BETTER = {"CD_t_mm", "HD95_mm", "DCD", "clump_%", "spacing_CV"}
+# Reported as a separate table: mixing them into the one above invites reading a
+# whole-cloud number and a defect-only number off the same row as if comparable.
+DEFECT_COLS = ["defect_cov_mm", "defect_HD95_mm", "defect_prec_mm",
+               "defect_F1@0.05", "defect_gt_%", "defect_n_pred"]
+LOWER_IS_BETTER = {"CD_t_mm", "HD95_mm", "DCD", "clump_%", "spacing_CV",
+                   "defect_cov_mm", "defect_HD95_mm", "defect_prec_mm"}
 
 
 def summarise(df):
@@ -207,6 +296,23 @@ def summarise(df):
     order = list(dict.fromkeys(df["run"]))
     out = df.groupby("run")[SUMMARY_COLS].mean().loc[order]
     return out.round(4)
+
+
+def format_defect_summary(df):
+    """The defect-region table. Kept separate from format_summary on purpose --
+    these millimetres are one-directional and cover 6.7% of the surface, so
+    reading them on the same row as the whole-cloud numbers would invite treating
+    a 12 mm coverage error as if it were four times worse than a 6 mm CD_t."""
+    cols = [c for c in DEFECT_COLS if c in df.columns]
+    if not cols:
+        return "(no defect-region columns -- pass inp= to metrics_from_points)"
+    order = list(dict.fromkeys(df["run"]))
+    s = df.groupby("run")[cols].mean().loc[order]
+    lines = [f"{'run':<20}" + "".join(f"{c:>16}" for c in cols),
+             "-" * (20 + 16 * len(cols))]
+    for name, r in s.iterrows():
+        lines.append(f"{name:<20}" + "".join(f"{r[c]:>16.3f}" for c in cols))
+    return "\n".join(lines)
 
 
 def format_summary(df, gt_row=None):
