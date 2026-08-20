@@ -19,6 +19,7 @@
 | `cd_rep05_truncated` | ⚠️ **作废，勿引用**。撞 `--epochs 300` 上限被截断，<br>最优值落在最后一轮，说明还在收敛中。 | 6.332 mm | 300（截断） |
 | **`cd_rep05_full`** | **DCD 消融**：`--loss cd --repulsion-weight 0.5`。<br>去掉 DCD 后 CD_t / HD95 反而更好，F1 与扎堆率持平。 | **6.267 mm** | 256（最优在 236） |
 | `cd_rep05_r2` | 与上一行**完全相同的配置，重复一次**。CD_t 只差 0.004mm，<br>证明修好学习率衰减后结果高度可复现。 | 6.274 mm | 249（最优在 229） |
+| `cd_only` | **2×2 的第四格**：`--loss cd`，无 DCD 无 repulsion。<br>除 HD95 外每项都最差，扎堆率 13.6% 甚至高于 baseline。<br>证明 DCD 单独仍有效（13.6% → 5.6%），只是远弱于 repulsion。 | 6.353 mm | 305（最优在 285） |
 | `pretrained_baseline` | 对照组：作者发布的 `MSN_weights3.h5` 直接推理，<br>不在颅骨上训练。由 `notebooks/MSN_baseline_pretrained.ipynb` 产出。 | 见 CSV | — |
 
 ⚠️ **噪声底线随学习率衰减是否生效而变，差两个数量级 —— 读任何差异前先确认属于哪一档。**
