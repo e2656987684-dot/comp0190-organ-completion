@@ -66,6 +66,14 @@ train/val id split, final metrics) and `history.csv` (per-epoch curves) for each
 run worth keeping. Git tags mark the matching code state, e.g.
 `git diff baseline-7.08mm` shows what changed since that result was produced.
 
+## Where things are tracked
+
+| 文件 | 放什么 |
+|---|---|
+| **[`TODO.md`](TODO.md)** | **接下来做什么。** 追加式：每完成一项另起一节写日期、重列完整清单，**最后一节永远是当前有效的** |
+| [`devlog.md`](devlog.md) | 做过什么、为什么、量到了什么。按日期追加 |
+| [`experiments_log/`](experiments_log/) | 每次训练的 `run.json` + `history.csv`，以及各 run 的对照表 |
+
 ## Setup
 On a fresh GPU pod, `bash setup_env.sh` sets up a conda environment
 (`comp0190-msn`, see comments in that file) covering everything the current
