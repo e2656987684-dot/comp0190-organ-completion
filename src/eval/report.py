@@ -168,45 +168,67 @@ def _defect_metrics(P, G, I, dist1, scale_mm):
     would still score well. These columns measure the part of the task that is
     actually hard.
 
-    "In the defect" is decided by ONE rule applied to both clouds: a point is in
-    the defect if the nearest INPUT point is more than DEFECT_MM away. Using the
-    same rule on each side keeps it non-circular -- the alternative, calling a
-    prediction "in the defect" when it is near a defect ground-truth point, would
-    define the prediction's region using the answer.
+    THE TWO MASKS ARE DIFFERENT, ON PURPOSE.
 
-    Reported per direction rather than summed, because the two mean different
-    things here and only one of them is hard to cheat:
+      ground truth : a GT point is in the defect if the nearest INPUT point is
+                     more than DEFECT_MM away. The GT->input distance is cleanly
+                     bimodal (peak at 2-3 mm for shared surface, valley at 5-6 mm,
+                     second peak past 15 mm), and DEFECT_MM = 5 sits in the
+                     valley: it selects 6.7% of GT points, against 42% at a 3 mm
+                     cut and 4.2% at 8 mm, i.e. the count is flat once past the
+                     valley. The scale that sets this is the sampling spacing --
+                     4.03 mm between GT points, 4.96 mm between input points --
+                     since two independent samplings of one surface land about
+                     half a spacing apart.
+
+      prediction   : a predicted point is in the defect if it is within DEFECT_MM
+                     of a defect GT point. The same "far from input" rule does
+                     NOT work here: a prediction floating 6 mm above intact bone
+                     also satisfies it, so that version silently measured how far
+                     predictions drift off the surface -- which CD_t and HD95
+                     already cover -- rather than how well the hole is filled.
+                     Measured, it inflated this column by 43% (4.37 -> 2.91 mm on
+                     cd_rep05_full) and inflated it MOST for the worst model
+                     (baseline 5.42 -> 3.01), because a poorer prediction drifts
+                     past the threshold more often.
+
+    Defining the prediction's region from the ground truth is not circular: the
+    region is a fact about (input, GT), and the prediction never enters its
+    definition. Restricting a metric to a GT-derived band and then scoring
+    predictions inside it is what boundary DSC does as well.
+
+    Reported per direction rather than summed, because the two carry different
+    weight:
 
       coverage (gt -> pred)  : of the missing surface, how close is the nearest
                                predicted point. Cannot be gamed -- ignoring the
-                               hole makes this worse.
+                               hole makes this worse. THIS is the column that
+                               discriminates: 3.24-3.91 mm across runs, against a
+                               0.007 mm repeat difference.
       precision (pred -> gt) : of the points placed in the defect, how close they
-                               are to the real surface (all of it, not just the
-                               defect -- see below). CAN be gamed by placing no
-                               points there at all, which is why n_pred is
-                               reported alongside it.
-
-    n_pred is also worth reading on its own: ground truth puts ~395 points in the
-    defect while the models place ~930 there. The rule catches a shell around the
-    hole, because predictions sit ~6 mm off the surface and drift across the
-    boundary.
+                               are to the real surface. Every configuration lands
+                               at 2.89-3.01 mm, i.e. it does NOT discriminate --
+                               the models differ in how completely they cover the
+                               hole, not in how accurately they fill it. Can also
+                               be gamed by placing no points there, hence n_pred.
     """
     from scipy.spatial import cKDTree
 
-    tree_i = cKDTree(I)
     thr = DEFECT_MM / scale_mm                       # mm -> normalised
-    gt_mask = tree_i.query(G, k=1, workers=-1)[0] > thr
-    pr_mask = tree_i.query(P, k=1, workers=-1)[0] > thr
+    gt_mask = cKDTree(I).query(G, k=1, workers=-1)[0] > thr
 
-    out = {"defect_gt_%": 100.0 * gt_mask.mean(),
-           "defect_n_pred": int(pr_mask.sum())}
+    out = {"defect_gt_%": 100.0 * gt_mask.mean()}
     if not gt_mask.any():                            # no hole found: leave blank
-        return {**out, "defect_cov_mm": np.nan, "defect_HD95_mm": np.nan,
-                "defect_prec_mm": np.nan, "defect_F1@0.05": np.nan}
+        return {**out, "defect_n_pred": 0, "defect_cov_mm": np.nan,
+                "defect_HD95_mm": np.nan, "defect_prec_mm": np.nan,
+                "defect_F1@0.05": np.nan}
 
     cov = dist1[gt_mask]                             # reuse: gt -> nearest pred
     out["defect_cov_mm"] = float(cov.mean()) * scale_mm
     out["defect_HD95_mm"] = float(np.percentile(cov, 95)) * scale_mm
+
+    pr_mask = cKDTree(G[gt_mask]).query(P, k=1, workers=-1)[0] < thr
+    out["defect_n_pred"] = int(pr_mask.sum())
 
     if pr_mask.any():
         # Target is the FULL ground truth, not just its defect points. Restricting
