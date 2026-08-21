@@ -498,7 +498,7 @@ def LBR(tensor, C, name, use_bias=True, leaky=0.0):
     return L.LeakyReLU(alpha=leaky, name=name + "_ReLU")(x)
 
 
-def _offset_attention(query_src, key_src, name):
+def _offset_attention(query_src, key_src, name, tie_qk=False):
     """PCT offset attention. query_src is the residual stream.
 
     Dropout was tried here (on the sublayer output, the standard transformer
@@ -508,8 +508,19 @@ def _offset_attention(query_src, key_src, name):
     """
     C = key_src.shape[-1]
     out_dim = query_src.shape[-1]
-    q = L.Dense(C // 4, use_bias=False, name=name + "_Q")(query_src)
-    k = L.Dense(C // 4, use_bias=False, name=name + "_K")(key_src)
+    q_layer = L.Dense(C // 4, use_bias=False, name=name + "_Q")
+    k_layer = L.Dense(C // 4, use_bias=False, name=name + "_K")
+    q = q_layer(query_src)
+    k = k_layer(key_src)
+    if tie_qk:
+        # The published demo does this in Self_Attention (and only there):
+        # `W_k.set_weights(W_q.get_weights())`. It is a one-off copy at build
+        # time -- the two stay separate trainable variables -- so it only sets
+        # the starting point. With W_k == W_q the initial energy is a Gram
+        # matrix whose diagonal dominates, i.e. "attend to yourself" is the
+        # prior. Without it the scores start isotropic. This rewrite omitted the
+        # line from the start (2026-07-28); see devlog 2026-08-21.
+        k_layer.set_weights(q_layer.get_weights())
     v = L.Dense(out_dim, use_bias=False, name=name + "_V")(key_src)
 
     energy = L.Lambda(lambda t: tf.matmul(t[0], t[1], transpose_b=True), name=name + "_matmul1")([q, k])
@@ -521,8 +532,8 @@ def _offset_attention(query_src, key_src, name):
     return L.Add(name=name + "_add")([query_src, r])
 
 
-def self_attention(x, name):
-    return _offset_attention(x, x, name)
+def self_attention(x, name, tie_qk=False):
+    return _offset_attention(x, x, name, tie_qk=tie_qk)
 
 
 def cross_attention(enc, dec, name):
@@ -572,6 +583,11 @@ class MSNConfig:
     # recorded in run.json and read back by report.Run.arch_key for exactly that
     # reason -- see the 2026-08-21 devlog entry.
     per_point_attn: bool = False
+    # Restores the demo's one-line Q/K weight tie in the encoder's self-attention
+    # (cross-attention cannot tie -- its Q and K have different input widths, and
+    # the demo does not tie there either). Off by default = this rewrite's
+    # behaviour since 2026-07-28, which is what every run so far used.
+    tie_qk_init: bool = False
     text_in_dim: int = 768       # BERT pooler width
 
     @property
@@ -631,7 +647,7 @@ def build_encoder(xyz, cfg: MSNConfig):
 
     outs, h = [], x
     for i in range(cfg.n_sa_stage1):
-        h = self_attention(h, f"E-SA{i + 1}")
+        h = self_attention(h, f"E-SA{i + 1}", tie_qk=cfg.tie_qk_init)
         outs.append(h)
     x0 = L.Concatenate(axis=2, name="E-SA_Concat")(outs) if len(outs) > 1 else outs[0]
     x = L.Concatenate(axis=2, name="E-OUT_Concat")([x0, x])
@@ -639,7 +655,7 @@ def build_encoder(xyz, cfg: MSNConfig):
 
     outs, h = [], x
     for i in range(cfg.n_sa_stage2):
-        h = self_attention(h, f"E-SA{cfg.n_sa_stage1 + i + 1}")
+        h = self_attention(h, f"E-SA{cfg.n_sa_stage1 + i + 1}", tie_qk=cfg.tie_qk_init)
         outs.append(h)
     x0 = L.Concatenate(axis=2, name="E-SA_Concat2")(outs) if len(outs) > 1 else outs[0]
     x = LBR(x0, cfg.enc_out_dim, "E-OUT_LBR1", use_bias=False, leaky=0.2)

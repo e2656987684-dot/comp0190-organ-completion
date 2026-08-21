@@ -146,6 +146,11 @@ def parse_args():
     ap.add_argument("--fold", type=int, default=0,
                     help="which fold (0-indexed) is validation, when --n-folds > 0")
     ap.add_argument("--no-text", action="store_true", help="drop the (constant) text branch entirely")
+    ap.add_argument("--tie-qk-init", action="store_true",
+                    help="restore the published demo's one-line Q/K weight tie in the encoder "
+                         "self-attention (W_k.set_weights(W_q.get_weights())). This rewrite has "
+                         "omitted it since 2026-07-28; it raises the initial attention-score "
+                         "scale ~10x. Topology-affecting, so it goes into run.json.")
     ap.add_argument("--per-point-attn", action="store_true",
                     help="feed the decoder's first four cross-attention blocks the encoder's "
                          "per-point features instead of only the tiled global vector. Off by "
@@ -242,6 +247,7 @@ def main():
     cfg = msn.MSNConfig.paper() if args.config == "paper" else msn.MSNConfig.small()
     cfg.use_text = not args.no_text
     cfg.per_point_attn = args.per_point_attn
+    cfg.tie_qk_init = args.tie_qk_init
     if inputs.shape[1] != cfg.n_in or gt.shape[1] != cfg.n_out:
         raise SystemExit(
             f"cache is {inputs.shape[1]} in / {gt.shape[1]} gt but config '{args.config}' "
@@ -377,6 +383,7 @@ def main():
         # defaults that were in force before the field existed.
         "use_text": bool(cfg.use_text),
         "per_point_attn": bool(cfg.per_point_attn),
+        "tie_qk_init": bool(cfg.tie_qk_init),
         # Both stopping ceilings, so "did this run stop early or hit a wall?" is
         # answerable from the record instead of by arithmetic on history.csv.
         "epochs": args.epochs, "minutes": args.minutes,

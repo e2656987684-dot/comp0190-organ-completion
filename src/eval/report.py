@@ -78,16 +78,19 @@ class Run:
         m = self.meta
         return (m.get("config", "paper"),
                 bool(m.get("per_point_attn", False)),
-                bool(m.get("use_text", True)))
+                bool(m.get("use_text", True)),
+                bool(m.get("tie_qk_init", False)))
 
     @property
     def arch_label(self):
-        name, per_point, use_text = self.arch_key
+        name, per_point, use_text, tie_qk = self.arch_key
         bits = [name]
         if per_point:
             bits.append("pp_attn")
         if not use_text:
             bits.append("no_text")
+        if tie_qk:
+            bits.append("tie_qk")
         return "+".join(bits)
 
     @property
@@ -274,7 +277,7 @@ def _defect_metrics(P, G, I, dist1, scale_mm):
 
 def arch_config(msn, arch):
     """Rebuild the MSNConfig a run was trained with, from its arch_key."""
-    name, per_point, use_text = arch
+    name, per_point, use_text, tie_qk = arch
     try:
         cfg = getattr(msn.MSNConfig, name)()
     except AttributeError:
@@ -290,6 +293,10 @@ def arch_config(msn, arch):
                 "has no such option -- check out the code version that matches it")
         cfg.per_point_attn = True
     cfg.use_text = use_text
+    if tie_qk and not hasattr(cfg, "tie_qk_init"):
+        raise ValueError("this run was trained with tie_qk_init=True but msn_skullfix has no "
+                         "such option -- check out the code version that matches it")
+    cfg.tie_qk_init = tie_qk
     return cfg
 
 
