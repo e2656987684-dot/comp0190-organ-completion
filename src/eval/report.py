@@ -67,6 +67,30 @@ class Run:
         return os.path.join(self.dir, "best.h5")
 
     @property
+    def arch_key(self):
+        """Which network topology these weights belong to.
+
+        Every field that changes the topology WITHOUT changing any weight shape
+        has to be listed here, because those are exactly the ones `load_weights`
+        cannot catch. Runs recorded before a field existed default to the value
+        that was in force at the time, so old run.json files stay readable.
+        """
+        m = self.meta
+        return (m.get("config", "paper"),
+                bool(m.get("per_point_attn", False)),
+                bool(m.get("use_text", True)))
+
+    @property
+    def arch_label(self):
+        name, per_point, use_text = self.arch_key
+        bits = [name]
+        if per_point:
+            bits.append("pp_attn")
+        if not use_text:
+            bits.append("no_text")
+        return "+".join(bits)
+
+    @property
     def best_epoch(self):
         """1-indexed epoch of lowest val CD_t -- what best.h5 holds."""
         return int(self.hist["val_cd_t_metric"].idxmin()) + 1
@@ -248,6 +272,27 @@ def _defect_metrics(P, G, I, dist1, scale_mm):
     return out
 
 
+def arch_config(msn, arch):
+    """Rebuild the MSNConfig a run was trained with, from its arch_key."""
+    name, per_point, use_text = arch
+    try:
+        cfg = getattr(msn.MSNConfig, name)()
+    except AttributeError:
+        raise ValueError(f"run.json names an unknown config {name!r}") from None
+    if per_point:
+        # Guards the one-way failure: a run trained with per-point decoder keys
+        # being evaluated by a checkout that predates the option. Silently
+        # falling back to the replicated global vector would load the weights
+        # fine and report numbers for the wrong network.
+        if not hasattr(cfg, "per_point_attn"):
+            raise ValueError(
+                "this run was trained with per_point_attn=True but msn_skullfix "
+                "has no such option -- check out the code version that matches it")
+        cfg.per_point_attn = True
+    cfg.use_text = use_text
+    return cfg
+
+
 def eval_runs(repo, runs, n_skulls=None, device="/GPU:0"):
     """Per-skull metrics for every run, on that run's own validation split.
 
@@ -269,38 +314,61 @@ def eval_runs(repo, runs, n_skulls=None, device="/GPU:0"):
 
     data = np.load(os.path.join(repo, "data", "cache", "skullfix_pairs_4096_6144.npz"))
     ids, inputs, gt, scales = data["ids"], data["inputs"], data["gt"], data["scale_mm"]
-    text = np.load(os.path.join(repo, "data", "cache", "bert_skull.npy"))
+    # Only needed by text-branch runs; a no-text checkout may not have cached it.
+    text_path = os.path.join(repo, "data", "cache", "bert_skull.npy")
+    text = np.load(text_path) if os.path.exists(text_path) else None
 
-    # One model, reused across runs. Building a fresh 187M-parameter model per run
-    # exhausted a 24 GB card at the fourth one: `del model` + clear_session() does
-    # not make TF's allocator hand memory back, so each rebuild stacked. Every run
-    # here shares MSNConfig.paper(), so only the weights need swapping.
-    cfgs = {r.meta.get("config", "paper") for r in runs}
-    assert cfgs == {"paper"}, f"eval_runs assumes one shared architecture, got {cfgs}"
+    # One model per ARCHITECTURE, reused across the runs that share it. Building a
+    # fresh 187M-parameter model per run exhausted a 24 GB card at the fourth one:
+    # `del model` + clear_session() does not make TF's allocator hand memory back,
+    # so each rebuild stacked.
+    #
+    # Grouping, rather than asserting a single architecture, is what keeps a
+    # cross-architecture comparison honest. `load_weights` will NOT protect you
+    # here: changing where the decoder's keys come from leaves every weight SHAPE
+    # untouched (only the key sequence length moves), so an old checkpoint loads
+    # into the new topology without raising, and quietly reports numbers for a
+    # network that was never trained. Same failure mode as the MSN_weights3.h5
+    # mismatch documented in msn_skullfix -- shapes agree, meaning does not.
+    groups = {}
+    for r in runs:
+        groups.setdefault(r.arch_key, []).append(r)
+    if len(groups) > 1:
+        print(f"[eval_runs] {len(groups)} architectures present, one model each: "
+              + ", ".join(f"{k[0]}{'+pp_attn' if k[1] else ''} x{len(v)}"
+                          for k, v in groups.items()))
 
     rows = []
     with tf.device(device):
-        model = msn.build_model(msn.MSNConfig.paper())
-        for run in runs:
-            model.load_weights(run.weights)
-            val = run.meta["val_ids"][:n_skulls] if n_skulls else run.meta["val_ids"]
-            pos = [int(np.where(ids == sid)[0][0]) for sid in val]
-            # model.predict, NOT model(x) in a loop. Measured: calling the model
-            # directly on one sample at a time leaks 0.29 GiB per call and never
-            # returns it, so 80 skulls exhausts a 24 GB card partway through the
-            # fourth run. predict() holds flat at 0.78 GiB across any number of
-            # batches.
-            preds = model.predict([inputs[pos], np.tile(text[None], (len(pos), 1))],
-                                  batch_size=1, verbose=0)
-            for sid, i, p in zip(val, pos, preds):
-                s = float(scales[i])
-                row = {"run": run.label, "id": sid}
-                row.update(metrics_from_points(p, gt[i], s, inp=inputs[i]))
-                st = mv.surface_stats(p, gt[i], s)
-                row["clump_%"] = st["clump_pct"]
-                row["spacing_CV"] = st["spacing_cv"]
-                rows.append(row)
-            print(f"  {run.label}: {len(val)} skulls")
+        for arch, group in groups.items():
+            cfg = arch_config(msn, arch)
+            if cfg.use_text and text is None:
+                raise FileNotFoundError(
+                    f"{group[0].label} was trained with the text branch, but "
+                    f"{text_path} is missing")
+            model = msn.build_model(cfg)
+            for run in group:
+                model.load_weights(run.weights)
+                val = run.meta["val_ids"][:n_skulls] if n_skulls else run.meta["val_ids"]
+                pos = [int(np.where(ids == sid)[0][0]) for sid in val]
+                # model.predict, NOT model(x) in a loop. Measured: calling the model
+                # directly on one sample at a time leaks 0.29 GiB per call and never
+                # returns it, so 80 skulls exhausts a 24 GB card partway through the
+                # fourth run. predict() holds flat at 0.78 GiB across any number of
+                # batches.
+                x = [inputs[pos]]
+                if cfg.use_text:
+                    x.append(np.tile(text[None], (len(pos), 1)))
+                preds = model.predict(x, batch_size=1, verbose=0)
+                for sid, i, p in zip(val, pos, preds):
+                    s = float(scales[i])
+                    row = {"run": run.label, "id": sid}
+                    row.update(metrics_from_points(p, gt[i], s, inp=inputs[i]))
+                    st = mv.surface_stats(p, gt[i], s)
+                    row["clump_%"] = st["clump_pct"]
+                    row["spacing_CV"] = st["spacing_cv"]
+                    rows.append(row)
+                print(f"  {run.label}: {len(val)} skulls")
     return pd.DataFrame(rows)
 
 

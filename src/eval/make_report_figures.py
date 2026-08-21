@@ -85,13 +85,20 @@ def main():
     val = runs[0].meta["val_ids"]
     k = int(np.where(ids == (SHOW_SKULL or val[0]))[0][0])
     preds = {}
-    model = msn.build_model(msn.MSNConfig.paper())
-    for r in runs:
-        if r.label not in DENSITY_RUNS:
-            continue
+    # One model for all of DENSITY_RUNS, so they must share a topology -- swapping
+    # weights across architectures loads without error and draws the wrong picture.
+    shown = [r for r in runs if r.label in DENSITY_RUNS]
+    archs = {r.arch_key for r in shown}
+    if len(archs) > 1:
+        raise ValueError("DENSITY_RUNS spans several architectures "
+                         f"({sorted(r.arch_label for r in shown)}); this figure "
+                         "reuses one model and cannot mix them")
+    cfg = rp.arch_config(msn, archs.pop())
+    model = msn.build_model(cfg)
+    for r in shown:
         model.load_weights(r.weights)
-        preds[r.label] = model.predict([inputs[k][None], text[None]],
-                                       batch_size=1, verbose=0)[0]
+        x = [inputs[k][None]] + ([text[None]] if cfg.use_text else [])
+        preds[r.label] = model.predict(x, batch_size=1, verbose=0)[0]
     s = float(scales[k])
 
     items = [(gt[k], "ground truth")] + [(preds[n], n) for n in DENSITY_RUNS]

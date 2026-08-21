@@ -362,6 +362,14 @@ def main():
     model.save_weights(os.path.join(out_dir, "last.h5"))
     meta = {
         "config": args.config, "params": int(model.count_params()),
+        # Topology switches. These have to be recorded, not inferred: they change
+        # what the network IS, and report.Run.arch_key reads them to decide which
+        # checkpoints may share a model. A run.json without them is read as the
+        # defaults that were in force before the field existed.
+        "use_text": bool(cfg.use_text),
+        # Both stopping ceilings, so "did this run stop early or hit a wall?" is
+        # answerable from the record instead of by arithmetic on history.csv.
+        "epochs": args.epochs, "minutes": args.minutes,
         "lr": args.lr, "batch_size": args.batch_size, "seed": args.seed,
         "n_folds": args.n_folds, "fold": args.fold if args.n_folds > 0 else None,
         "early_stop_patience": args.early_stop_patience,
