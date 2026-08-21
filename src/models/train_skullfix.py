@@ -146,6 +146,14 @@ def parse_args():
     ap.add_argument("--fold", type=int, default=0,
                     help="which fold (0-indexed) is validation, when --n-folds > 0")
     ap.add_argument("--no-text", action="store_true", help="drop the (constant) text branch entirely")
+    ap.add_argument("--per-point-attn", action="store_true",
+                    help="feed the decoder's first four cross-attention blocks the encoder's "
+                         "per-point features instead of only the tiled global vector. Off by "
+                         "default = published behaviour, where every key row is identical and "
+                         "the attention weights collapse to a uniform 1/dec_seed. The global "
+                         "vector is kept as the first key row, so this only ADDS keys. Changes "
+                         "no weight shape, so old checkpoints load into it silently -- the flag "
+                         "goes into run.json and report.Run.arch_key reads it back.")
     ap.add_argument("--mixed-precision", action="store_true")
     ap.add_argument("--seed", type=int, default=42)
     return ap.parse_args()
@@ -233,6 +241,7 @@ def main():
 
     cfg = msn.MSNConfig.paper() if args.config == "paper" else msn.MSNConfig.small()
     cfg.use_text = not args.no_text
+    cfg.per_point_attn = args.per_point_attn
     if inputs.shape[1] != cfg.n_in or gt.shape[1] != cfg.n_out:
         raise SystemExit(
             f"cache is {inputs.shape[1]} in / {gt.shape[1]} gt but config '{args.config}' "
@@ -367,6 +376,7 @@ def main():
         # checkpoints may share a model. A run.json without them is read as the
         # defaults that were in force before the field existed.
         "use_text": bool(cfg.use_text),
+        "per_point_attn": bool(cfg.per_point_attn),
         # Both stopping ceilings, so "did this run stop early or hit a wall?" is
         # answerable from the record instead of by arithmetic on history.csv.
         "epochs": args.epochs, "minutes": args.minutes,

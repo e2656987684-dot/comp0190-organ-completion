@@ -560,6 +560,18 @@ class MSNConfig:
     dec_head: tuple = (128, 128, 64)
     sampler: str = "unique"
     use_text: bool = True
+    # Decoder stage 1 keys. False (default) reproduces the published behaviour:
+    # m1 is the global vector tiled `dec_seed` times, so every key row is
+    # identical, the attention weights collapse to a uniform 1/dec_seed, and the
+    # block reduces to `x <- x + LBR(x - V(g))` -- a shared global conditioning
+    # offset, not attention. True concatenates the encoder's per-point features
+    # after the global vector, so the four D1 blocks can actually attend.
+    #
+    # This changes NO weight shape (only the key sequence length), so a
+    # checkpoint from one setting loads into the other without raising. It is
+    # recorded in run.json and read back by report.Run.arch_key for exactly that
+    # reason -- see the 2026-08-21 devlog entry.
+    per_point_attn: bool = False
     text_in_dim: int = 768       # BERT pooler width
 
     @property
@@ -631,14 +643,27 @@ def build_encoder(xyz, cfg: MSNConfig):
         outs.append(h)
     x0 = L.Concatenate(axis=2, name="E-SA_Concat2")(outs) if len(outs) > 1 else outs[0]
     x = LBR(x0, cfg.enc_out_dim, "E-OUT_LBR1", use_bias=False, leaky=0.2)
-    return L.Lambda(lambda t: tf.reduce_max(t, axis=1, keepdims=True), name="E-OUT_MaxPool")(x)
+    # `x` is (B, sg2_sample, enc_out_dim) and the max-pool throws all but one row
+    # of it away -- that pool is the information bottleneck. Return both: the
+    # pooled vector is what the model has always used, the per-point tensor costs
+    # nothing extra because it is already computed.
+    pooled = L.Lambda(lambda t: tf.reduce_max(t, axis=1, keepdims=True), name="E-OUT_MaxPool")(x)
+    return pooled, x
 
 
-def build_decoder(feats, cfg: MSNConfig):
+def build_decoder(feats, cfg: MSNConfig, per_point=None):
     seed1 = cfg.dec_seed
     seed2 = seed1 * 3
 
-    m1 = L.Lambda(lambda t: tf.tile(t, [1, seed1, 1]), name="D-IN_replicate")(feats)
+    if per_point is None:
+        m1 = L.Lambda(lambda t: tf.tile(t, [1, seed1, 1]), name="D-IN_replicate")(feats)
+    else:
+        # Global vector FIRST, then the per-point rows. Keeping it means the
+        # previous behaviour stays reachable (attend to row 0 only) and the text
+        # branch keeps its one and only path into the decoder -- `feats` reaches
+        # nothing else here, D1-eye/D2-eye use it for batch size alone. Dropping
+        # it measured worse in the defect region; see devlog 2026-08-21.
+        m1 = L.Concatenate(axis=1, name="D-IN_keys")([feats, per_point])
     # eye_seed is fixed to zeros, so this is a learned (seed, dim) embedding table
     # expressed as Dense(identity) -- kept in this form to mirror the demo.
     e1 = L.Lambda(lambda t: tf.tile(tf.expand_dims(tf.eye(seed1), 0), [tf.shape(t)[0], 1, 1]),
@@ -675,7 +700,7 @@ def build_model(cfg: MSNConfig = None) -> tf.keras.Model:
     xyz = Input(shape=(cfg.n_in, 3), name="input_points")
     inputs = [xyz]
 
-    encoded = build_encoder(xyz, cfg)
+    encoded, per_point = build_encoder(xyz, cfg)
 
     if cfg.use_text:
         text = Input(shape=(cfg.text_in_dim,), name="text_feat")
@@ -684,7 +709,8 @@ def build_model(cfg: MSNConfig = None) -> tf.keras.Model:
         t = L.Lambda(lambda z: tf.expand_dims(z, 1), name="text_expand")(t)
         encoded = L.Add(name="multimodal_add")([encoded, t])
 
-    out = build_decoder(encoded, cfg)
+    out = build_decoder(encoded, cfg,
+                        per_point=per_point if cfg.per_point_attn else None)
     return M.Model(inputs=inputs, outputs=out, name="MSN_PCT_skullfix")
 
 
