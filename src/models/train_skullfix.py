@@ -47,6 +47,13 @@ Added once data grew from 50 to 100 skulls (see devlog 2026-08-05):
       (default) keeps writing straight to --out-dir, so notebooks that
       hardcode experiments/msn_skullfix/best.h5 are unaffected.
 
+  --overwrite.  Re-using a --run-name used to silently replace the previous
+      run's best.h5 and history.csv while leaving its run.json (written only at
+      the END of a run) untouched, so the record and the weights stopped
+      describing the same training. It happened: see the cd_only incident in
+      devlog 2026-08-24. Starting a run now refuses to write into a directory
+      that already holds artifacts unless this flag is passed.
+
   --epochs 10000 -> 300, --minutes 55 -> 90.  With EarlyStopping doing the
       real work now, a 10000-epoch ceiling and a 55-minute budget shorter than
       that ceiling no longer made sense together. 300 epochs is a real cap
@@ -159,9 +166,56 @@ def parse_args():
                          "vector is kept as the first key row, so this only ADDS keys. Changes "
                          "no weight shape, so old checkpoints load into it silently -- the flag "
                          "goes into run.json and report.Run.arch_key reads it back.")
+    ap.add_argument("--overwrite", action="store_true",
+                    help="allow this run to write into a --run-name directory that already "
+                         "holds artifacts. Off by default: the checkpoint and the CSV log are "
+                         "rewritten from epoch 1 while run.json survives until the new run "
+                         "ends, so a re-used name leaves a record and a set of weights that "
+                         "describe different trainings (and nothing raises).")
     ap.add_argument("--mixed-precision", action="store_true")
     ap.add_argument("--seed", type=int, default=42)
     return ap.parse_args()
+
+
+def guard_out_dir(out_dir, overwrite):
+    """Refuse to start a run on top of another run's artifacts.
+
+    ModelCheckpoint and CSVLogger both start writing at epoch 1 regardless of
+    what is already in the directory, while run.json is written only when the
+    run finishes. Re-using a --run-name therefore replaces best.h5 and
+    history.csv but leaves the previous run.json in place: the record then
+    describes one training and the weights another, with nothing raising.
+
+    Measured, on cd_only (devlog 2026-08-24): an aborted re-run left a 57-epoch
+    checkpoint behind a run.json still reporting the original 305 epochs. On the
+    same validation skull the archived number was 7.62 mm and the file on disk
+    gave 8.29 mm. The run survived only because save_weights writes last.h5 at
+    the end of a run and the aborted one never got there.
+
+    An empty (or missing) directory is fine -- this only blocks a directory that
+    already holds a run's output.
+    """
+    names = ("run.json", "best.h5", "last.h5", "history.csv")
+    existing = [n for n in names if os.path.exists(os.path.join(out_dir, n))]
+    if not existing or overwrite:
+        return
+
+    meta_path = os.path.join(out_dir, "run.json")
+    detail = ""
+    if os.path.exists(meta_path):
+        with open(meta_path) as fh:
+            m = json.load(fh)
+        detail = (f"\n  it holds: {m.get('epochs_run', '?')} epochs, "
+                  f"loss={m.get('loss', '?')}, best val_loss {m.get('best_val_loss', float('nan')):.5f}")
+    else:
+        detail = "\n  it holds no run.json, so it is most likely an ABORTED run"
+
+    raise SystemExit(
+        f"\n{out_dir}\nalready contains {', '.join(existing)} -- refusing to overwrite it."
+        f"{detail}\n\n"
+        "  Pick a different --run-name, or move that directory aside, or pass --overwrite\n"
+        "  if you really mean to discard it. Training is not bit-reproducible on GPU, so a\n"
+        "  checkpoint replaced here cannot be recreated.\n")
 
 
 class TimeBudget:
@@ -210,6 +264,11 @@ def make_warmup(keras, target_lr, steps):
 
 def main():
     args = parse_args()
+    # Before TensorFlow, so a re-used --run-name fails in a second rather than
+    # after ten seconds of CUDA start-up.
+    out_dir = os.path.join(args.out_dir, args.run_name) if args.run_name else args.out_dir
+    guard_out_dir(out_dir, args.overwrite)
+
     os.environ.setdefault("HF_HOME", "/root/.cache/huggingface")
     os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")
 
@@ -223,7 +282,6 @@ def main():
     import msn_skullfix as msn
 
     tf.keras.utils.set_random_seed(args.seed)
-    out_dir = os.path.join(args.out_dir, args.run_name) if args.run_name else args.out_dir
     os.makedirs(out_dir, exist_ok=True)
 
     # ---------------- data ----------------
