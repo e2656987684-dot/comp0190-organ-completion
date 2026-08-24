@@ -1722,6 +1722,133 @@ EarlyStopping 是自己停的，"多跑 160 轮"不算作弊——那是这个�
 
 ---
 
+## 2026-08-24（仓库整理：权重裁剪，以及一个被静默覆盖的 checkpoint）⚠️⭐
+
+起因是整理磁盘（40G 盘只剩 8.2G），但过程中翻出一件比清理本身重要的事。
+
+### 一、⚠️ `cd_only` 的 checkpoint 曾被覆盖，而且不报错
+
+`experiments/msn_skullfix/cd_only/` 里三个文件的时间戳对不上：
+
+```
+best.h5      08-20 23:41   ← 被覆盖
+history.csv  08-20 23:41   ← 被覆盖，只剩 57 行（归档里是 305 行）
+last.h5      08-20 00:31   ← 原始那次训练结束时写的
+run.json     08-20 00:31   ← 原始那次，仍写着 epochs_run = 305
+```
+
+**机制**：`ModelCheckpoint` 和 `CSVLogger` 都从第 1 轮就开始写，而 `run.json`
+只在训练结束时写。所以一次**中途放弃**的重跑（同名 `--run-name cd_only`，跑到
+57 轮被掐）会替换掉 `best.h5` 和 `history.csv`，却留下上一次的 `run.json` ——
+**记录和权重从此描述两次不同的训练，没有任何东西会报错**。
+（`last.h5` 逃过一劫纯属运气：它只在 `fit()` 正常返回后才写，中断的那次没走到。）
+
+**证据**：拿覆盖发生**之前**（08-20 01:52）写的 `eval_all_runs.csv` 做参照，
+两个 checkpoint 各评 3 颗验证颅骨：
+
+```
+skull    归档 CSV   磁盘 best.h5   磁盘 last.h5
+083       7.623      8.286 ❌      7.623 ✅
+053       8.669      9.330 ❌      8.669 ✅
+070       6.280      7.137 ❌      6.280 ✅
+```
+
+`last.h5` 逐位对上，`best.h5` 是那个 57 轮的半成品（LR 还停在 3e-4，val_loss
+0.0694，而归档是 0.0612）。
+
+**影响面：已发表的数字没有受影响。** `cd_only` 出现在 2×2 消融、缺损区表、
+第二次进度汇报里，那些评估全部跑在 08-20 01:52，早于 23:41 的覆盖。
+**真正的风险是未来**：今天之后任何人重跑一次 `eval_runs`（比如为了刷新 CSV）
+都会静默拿到那个错模型，而且它比真的差 0.5~0.9mm —— 刚好大到能改变结论、
+又不至于离谱到被一眼看出。
+
+**已修复**：`last.h5` 验证为正确权重后改名顶上，`history.csv` 从
+`experiments_log/cd_only/` 还原。修完 `run.json` 的 `epochs_run` 与 history 行数
+一致（305 = 305）。
+
+这个坑 2026-08-06 就记过一次（"`--run-name` 重名会静默覆盖"），当时只写进 devlog
+没改代码，于是它又发生了一次 —— **只是这次覆盖的是一个已经进了汇报的结果。**
+
+### 二、根因已堵上：`--run-name` 覆盖保护
+
+`train_skullfix.py` 新增 `guard_out_dir()`，在 import TensorFlow **之前**执行
+（撞名 1 秒内失败，不用等十几秒 CUDA 起来）：目标目录里已存在
+`run.json` / `best.h5` / `last.h5` / `history.csv` 中任何一个就拒绝启动，
+并打印那个目录里装的是什么（轮数、loss、best val_loss），
+没有 `run.json` 时额外提示"这多半是一次中断的运行"。要覆盖必须显式
+`--overwrite`。
+
+实测三种情况：撞已有 run ✅ 拒绝并报出 "256 epochs, loss=cd, best val_loss
+0.06046"；撞只剩 `best.h5` 的残留目录 ✅ 拒绝并提示 ABORTED；全新名字 ✅ 放行。
+
+k 折要跑 20+ 个 `--run-name`，全靠手写，这个保护现在是必需品而不是锦上添花。
+
+### 三、`last.h5` 是 `best.h5` 的逐字节副本（9.1 GiB 纯冗余）
+
+14 个 run 逐个 md5：**13 个的 `last.h5` 与 `best.h5` 完全相同**。
+原因是 `EarlyStopping(restore_best_weights=True)` —— `fit()` 返回时模型里装的
+已经是最优轮的权重，随后的 `model.save_weights("last.h5")` 存的是同一份。
+唯一的例外正是 `cd_only`，而且方向相反（对的那份是 `last.h5`）。
+
+也就是说 `save_weights(last.h5)` 这行在早停生效时**从来没提供过新信息**。
+留着它唯一的价值是"训练被 `--minutes` 或 `--epochs` 截断时能拿到最后状态"，
+而截断本身就是要作废的（`cd_rep05_truncated`）。已全部删除。
+
+### 四、裁剪前先把指标冻住（顺带验证了评估是完全确定性的）
+
+**删权重是单向的** —— 训练在 GPU 上不可逐位复现（2026-08-07 记过），删掉的
+checkpoint 无法重建。所以顺序必须是"先冻结、再删除"：
+
+- `eval_all_runs.csv`：7 → **10 个 run**（补上 `tie_qk` / `notext` / `pp_attn`，
+  它们的逐颅骨指标此前只存在于 devlog 的表格里）
+- `surface_quality.csv`：3 → **9 行**（口径不变：`ids` 顺序前 8 颗验证颅骨）
+
+三处独立核对，**偏差全部是 0.00e+00**：
+
+1. 与归档 CSV 重叠的 5 个 run × 20 颗 × 7 项指标，逐颅骨最大偏差 0
+2. `tie_qk` / `notext` / `pp_attn` 的均值与 devlog 2026-08-21 三张表逐项相符
+3. 修复后的 `cd_only` 精确复现它自己的归档行
+
+**顺带确认了一件以前没正式验证过的事：评估是完全确定性的。**
+`PointSampler` 在 `training=False` 时走 `stateless_uniform(seed=[42,0])`，
+所以只要权重还在，任何一行指标都能逐位重算。这与训练的不可复现形成对照，
+两件事在论文里要分开写：**训练不可复现，评估可复现。**
+
+### 五、删了什么
+
+| | 回收 |
+|---|---:|
+| 13 个重复的 `last.h5` | 9.1 GiB |
+| ⛔ 错误性/作废轮次的权重（`baseline_es20`、`dcd_w3`、`dcd_l2`、`rep05_void`、`drop01_rejected`、`cd_rep05_truncated`） | 4.2 GiB |
+| `cd_only` 那个被覆盖的 `best.h5` | 0.7 GiB |
+| `point_clouds_old_backup_no_fix/`（未修对齐的旧 .ply 路线） | 20 MB |
+| pip 缓存 | 2.5 GB |
+
+`experiments/` 19G → **5.6G**（8 个有效 run，各一个 `best.h5`），
+`/root` 可用 8.9G → **25G**。**`experiments_log/` 一行没动** —— 记录是证据，
+权重只是产物；⛔ 那四轮的 `run.json` + `history.csv` 恰恰是"有效性分界"
+这个论证本身，必须留。
+
+保留 `notext` 与 `pp_attn` 的权重：前者要和还没跑的 `notext_r2` 对比，
+后者留到注意力自查脚本正式写出来之前（那两个数字目前同样来自临时脚本）。
+
+### 六、连带影响（都已处理）
+
+- **`make_report_figures.py` 的 `RUNS` 依赖已删的三轮**，第一次汇报的图
+  再也生成不出来。而 `.gitignore` 忽略 `reports/figures/*.png` + `reports/*.pptx`
+  的理由**正是**"能重新生成"。→ 已用 `git add -f` 把交付物本身入库（约 5MB），
+  `.gitignore` 的注释改写成实情，脚本顶部加了醒目说明和"改用哪些 run"的指引。
+  用 5MB 换掉 2.1GB 作废权重。
+- **`MSN_surface_quality.ipynb` 的存档 cell 是覆盖写**（`df.to_csv`，只写它
+  `MODELS` 里那三个），现在直接跑一遍会把 9 行的表打回 3 行。已在
+  `experiments_log/README.md` 标注。
+
+### 七、没动的
+
+`TODO.md` 没有新增小节 —— 本次没有完成清单上的任何一项，也没有改变优先级
+（清理不是待办项）。当前有效清单仍是 2026-08-21 那节。
+---
+
 ## 📎 补充记录（2026-08-07）— 讨论所得，**不构成待办**
 
 > 以下是训练间隙的讨论笔记，包含**对先前记录的一处更正**、**一处可复现性问题**，

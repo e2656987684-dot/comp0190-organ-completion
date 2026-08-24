@@ -23,6 +23,18 @@ os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")
 import numpy as np
 import pandas as pd
 
+# ⚠️ THIS LIST NO LONGER RUNS AS-IS (2026-08-24).
+# The first four entries are the pre-LR-fix runs, which were reclassified as
+# erroneous experiments on 2026-08-21 and whose weights were then pruned -- see
+# experiments_log/README.md. Training is not bit-reproducible on GPU, so they
+# cannot be recreated; the PNGs those runs produced are now tracked in git
+# instead (reports/figures/, force-added past .gitignore).
+#
+# Before reusing this script for thesis figures, point RUNS at runs that still
+# have weights: lr_fix_only, rep_w05, cd_only, cd_rep05_full, cd_rep05_r2,
+# tie_qk, notext, pp_attn. That is a narrative choice (which runs the figure
+# tells its story with), so it is deliberately left to whoever writes that
+# chapter rather than silently rewritten here.
 RUNS = [
     ("baseline", "baseline_es20"),
     ("dcd_w3", "msn_skullfix/dcd_w3"),

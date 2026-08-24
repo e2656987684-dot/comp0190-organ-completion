@@ -82,7 +82,54 @@
 对应代码状态见 git tag：`baseline-7.08mm`、`rep-6.33mm`。
 
 `surface_quality.csv` 存的是密度/表面偏差指标（8 颗验证颅骨均值），
-由 `notebooks/MSN_surface_quality.ipynb` 产出，和上表的 CD_t 是两套互补的指标。
+和上表的 CD_t 是两套互补的指标。原本由 `notebooks/MSN_surface_quality.ipynb` 产出，
+2026-08-24 扩到 9 行（口径不变：`ids` 顺序里前 8 颗验证颅骨、`mesh_viz.surface_stats`；
+重算的 `lr_fix` / `rep_w05` 与旧文件逐位相同，已核对）。
+
+⚠️ **那个 notebook 的存档 cell 是覆盖写**（`df.to_csv(OUT)`，只写它 `MODELS` 里那三个），
+直接跑一遍会把这张表打回 3 行。要用它更新，先把 `MODELS` 补全。
+
+## 权重保留策略（2026-08-24 裁剪）
+
+`experiments/` 从 19G 降到 5.6G。**`experiments_log/` 一行没动** —— 记录是证据，
+权重只是产物。
+
+| | run | 权重 | 说明 |
+|---|---|---|---|
+| ✅ 保留 | `lr_fix_only`、`rep_w05`、`cd_only`、`cd_rep05_full`、`cd_rep05_r2`、`tie_qk`、`notext`、`pp_attn` | 各一个 `best.h5` | 有效轮次，将来还要在上面算新指标（Poisson 重建、粗糙度度量、注意力自查） |
+| ⛔ 已删 | `baseline_es20`、`dcd_w3`、`dcd_l2`、`rep05_void`、`drop01_rejected`、`cd_rep05_truncated` | 已删除 | 错误性/作废轮次，不会再作为评估对象 |
+| — | 所有 run 的 `last.h5` | 已删除 | `EarlyStopping(restore_best_weights=True)` 使它与 `best.h5` **逐字节相同**（13 个 run 实测 md5 一致），纯冗余 9.1 GiB |
+
+⚠️ **删权重是单向的**：训练在 GPU 上不可逐位复现，删掉的 checkpoint 无法重建。
+所以裁剪前先把逐颅骨指标冻进了 `eval_all_runs.csv`（7 → 10 个 run）和
+`surface_quality.csv`（3 → 9 行）。**`baseline` / `dcd_l2` 那两档的行是最后的
+存档，不可再算**，其余各行随时可由保留的权重复现（实测复算偏差 0.00e+00）。
+
+⚠️ 连带后果：`src/eval/make_report_figures.py` 的 `RUNS` 依赖已删的三轮，
+**第一次汇报的图不能再生成**。故 `reports/figures/*.png` 与 `reports/*.pptx`
+已用 `git add -f` 入库（约 5MB），`.gitignore` 里的理由也一并改了。
+
+### `cd_only` 的 checkpoint 曾被覆盖（已修复）
+
+清理时发现 `experiments/msn_skullfix/cd_only/` 里的 `best.h5` 和 `history.csv`
+被 2026-08-20 23:41 一次**中途放弃的重跑**（只跑到 57 轮）覆盖了，而 `run.json`
+还是原始 305 轮那次的 —— 因为 `ModelCheckpoint` / `CSVLogger` 从第 1 轮就开始写，
+`run.json` 却只在训练结束时写。**记录与权重从此描述两次不同的训练，且不报错。**
+
+已修复：`last.h5`（原始那次结束时存的、EarlyStopping 已 restore 到最优轮）验证
+为正确权重后顶上，`history.csv` 从本目录归档还原。验证方式是拿覆盖发生**之前**
+写的 `eval_all_runs.csv` 做参照，逐颅骨核对：
+
+```
+skull    归档 CSV   被覆盖的 best.h5   last.h5
+083       7.623        8.286 ❌        7.623 ✅
+053       8.669        9.330 ❌        8.669 ✅
+070       6.280        7.137 ❌        6.280 ✅
+```
+
+已发表的数字没有受影响（评估跑在覆盖之前）。根因已在
+`train_skullfix.py` 堵上：`--run-name` 指向一个已有产物的目录时直接拒绝启动，
+要覆盖必须显式传 `--overwrite`。详见 devlog 2026-08-24。
 
 两者评估的是**同一批 20 颗验证颅骨**、同一套指标定义（`msn_skullfix.calc_cd`）、
 同一份已对齐的 `.npz` 数据，所以可以直接对比。注意这个对照的性质是

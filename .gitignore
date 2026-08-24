@@ -234,8 +234,15 @@ __marimo__/
 *.ckpt
 *.h5
 experiments/
-# 汇报用的渲染产物：PPTX 约 2MB、PNG 图约 2.3MB，都能由
-# src/eval/make_report_figures.py + make_report_deck.py 从 experiments/ 重新生成。
-# 讲稿是手写的，要跟踪。
+# 汇报用的渲染产物：PPTX 约 2MB、PNG 图约 2.3MB。规则保留（免得每次重跑生成
+# 脚本都把一堆新图带进暂存区），但**已交付的那几份是用 `git add -f` 强制入库的**。
+#
+# 为什么改：这条规则原来的理由是"都能由 src/eval/make_report_figures.py 从
+# experiments/ 重新生成"。2026-08-24 按有效性分界裁剪权重之后这个前提没了 ——
+# 第一次汇报的图依赖 baseline_es20 / dcd_l2 / dcd_w3 的权重，而那三轮是 ⛔
+# 错误性实验，权重已删且训练不可复现，图再也生不出来。用 5MB 把交付物本身存进
+# git，比为了留住"可再生"而留 2.1GB 作废权重划算。
+#
+# 讲稿是手写的，一直跟踪。
 reports/figures/*.png
 reports/*.pptx
