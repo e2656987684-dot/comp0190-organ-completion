@@ -427,6 +427,129 @@ def format_summary(df, gt_row=None):
 
 
 # --------------------------------------------------------------------------- #
+# is the difference real?
+# --------------------------------------------------------------------------- #
+# THREE DIFFERENT YARDSTICKS, AND THEY ANSWER THREE DIFFERENT QUESTIONS. Mixing
+# them up is how this project came to describe a coin-flip as "10x the noise".
+#
+#   1. repeat-run difference   train the SAME config twice and compare the means.
+#      Answers: "if I retrain this, does the number move?" -- i.e. training
+#      stochasticity (GPU non-determinism, the stochastic centroid sampler).
+#      Measured here at 0.004 mm CD_t, but from ONE pair in ONE config, and it is
+#      epoch-dependent: the same pair differs by 0.108 mm if you cut both at 150
+#      epochs, 0.007 mm once both have annealed. It is NOT a universal floor.
+#
+#   2. per-skull paired test   `paired_stats` below. Answers: "would this still
+#      hold on a different sample of skulls?" -- i.e. generalisation past these
+#      20. This is the one a thesis examiner is asking about, and it is the one
+#      that was missing: several differences that are large against (1) are a
+#      coin flip against (2).
+#
+#   3. late-epoch wobble       std of val CD_t over the last ~30 epochs. Answers:
+#      "how much does the reported best-of-run reading jitter?" Small once the LR
+#      has annealed (0.003-0.010 mm), large when it has not (~0.25 mm, which is
+#      what voided the four pre-LR-fix runs).
+#
+# None of the three covers the others. A claim is safe when it clears (1) and
+# (2); `epoch_matched` below removes a fourth confound that is not noise at all.
+def epoch_matched(runs, at=None):
+    """Best-so-far val CD_t at a COMMON epoch count, for every run.
+
+    Runs stop themselves (EarlyStopping), so they stop at different epochs --
+    222 to 411 across this project -- while the headline number is the best epoch
+    of the whole run. A configuration that happens to keep improving longer
+    therefore reports a better number partly because it ran longer, which is a
+    systematic confound, not noise. Measured: `tie_qk`'s 0.095 mm lead over
+    `cd_rep05_full` shrinks to 0.02-0.03 mm when both are cut at 249 epochs, and
+    two thirds of its advantage is the 160 extra epochs.
+
+    Reading it: if a configuration is still ahead at the shortest common epoch
+    count, the effect is the configuration. If the lead only appears at its own
+    stopping point, what you measured is "this run trained longer" -- which can
+    still be a real property of the configuration, but it is a different claim
+    and needs the repeat to tell the two apart.
+
+    `at`: epoch counts to report. Defaults to the shortest run in the set.
+    """
+    at = at or [min(len(r.hist) for r in runs)]
+    rows = []
+    for r in runs:
+        cd = (r.hist["val_cd_t_metric"] * r.scale_mm).to_numpy()
+        row = {"run": r.label, "epochs": len(cd), "best_epoch": int(cd.argmin()) + 1,
+               "reported": float(cd.min())}
+        for ep in at:
+            row[f"@{ep}"] = float(cd[:ep].min()) if len(cd) >= ep else np.nan
+        row["late_std"] = float(cd[-30:].std())
+        rows.append(row)
+    return pd.DataFrame(rows).set_index("run").round(4)
+
+
+def paired_stats(df, base, other, cols=None):
+    """Per-skull paired comparison of two runs, on the skulls they share.
+
+    Every run here is evaluated on the SAME 20 validation skulls, so the skulls
+    pair up exactly and "this skull is intrinsically harder" cancels out -- which
+    matters, because between-skull spread (CD_t std ~1.0 mm) dwarfs every effect
+    being chased (0.02-0.2 mm). Comparing two means without pairing would drown
+    all of them.
+
+    Returns, per metric: the mean difference (other - base, signed so that
+    `better` counts improvements in that metric's own direction), the paired
+    standard error, a 95% interval, how many skulls improved, and two p-values --
+    a sign test (does it improve MORE skulls than chance) and Wilcoxon signed-rank
+    (are the magnitudes consistent too). The sign count is often the more useful
+    column: `repulsion` improves defect coverage on 18/20 skulls, which is far
+    more convincing than its mean, whose interval is wide.
+
+    ⚠️ This holds the two TRAINED MODELS fixed and varies the skulls. It cannot
+    see training stochasticity: retrain either config and you get a slightly
+    different model. A claim needs both this and a repeat run (see the note
+    above). ⚠️ Running many of these invites multiple-comparison error -- with
+    ~24 tests, treat p < 0.002 as the safe bar, not p < 0.05.
+    """
+    from scipy import stats
+
+    cols = cols or [c for c in SUMMARY_COLS + DEFECT_COLS
+                    if c in df.columns and c not in ("defect_gt_%", "defect_n_pred")]
+    piv = df.pivot(index="id", columns="run")
+    rows = []
+    for c in cols:
+        d = (piv[c][other] - piv[c][base]).dropna()
+        n = len(d)
+        if n < 2:
+            continue
+        m, se = float(d.mean()), float(d.std(ddof=1) / np.sqrt(n))
+        better = int((d < 0).sum() if c in LOWER_IS_BETTER else (d > 0).sum())
+        try:
+            p_w = float(stats.wilcoxon(d).pvalue)
+        except ValueError:                      # all differences exactly zero
+            p_w = np.nan
+        rows.append({"metric": c, "delta": m, "paired_se": se,
+                     "ci_lo": m - 1.96 * se, "ci_hi": m + 1.96 * se,
+                     "better": f"{better}/{n}",
+                     "p_sign": float(stats.binomtest(better, n, 0.5).pvalue),
+                     "p_wilcoxon": p_w})
+    return pd.DataFrame(rows).set_index("metric").round(4)
+
+
+def format_paired(df, base, other, cols=None):
+    """paired_stats as a plain-text table, with the direction spelled out."""
+    s = paired_stats(df, base, other, cols)
+    head = (f"{other}  vs  {base}   (20 颗配对；delta = {other} − {base})\n"
+            f"{'metric':16}{'delta':>10}{'paired SE':>11}{'95% CI':>21}"
+            f"{'改善':>8}{'p_sign':>9}{'p_wilcox':>10}")
+    lines = [head, "-" * len(head.split("\n")[-1])]
+    for m, r in s.iterrows():
+        arrow = "↓好" if m in LOWER_IS_BETTER else "↑好"
+        ci = f"[{r['ci_lo']:+.3f},{r['ci_hi']:+.3f}]"
+        star = "  ***" if r["p_wilcoxon"] < 0.001 else ("  **" if r["p_wilcoxon"] < 0.01
+               else ("  *" if r["p_wilcoxon"] < 0.05 else ""))
+        lines.append(f"{m + ' ' + arrow:16}{r['delta']:>+10.3f}{r['paired_se']:>11.3f}"
+                     f"{ci:>21}{r['better']:>8}{r['p_sign']:>9.4f}{r['p_wilcoxon']:>10.4f}{star}")
+    return "\n".join(lines)
+
+
+# --------------------------------------------------------------------------- #
 # figures
 # --------------------------------------------------------------------------- #
 def fig_curves(runs, scale_mm=None, height=400, settle_epoch=20):

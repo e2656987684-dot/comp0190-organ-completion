@@ -30,11 +30,16 @@ src/corruption/            (placeholder) self-built corruption operators
 src/eval/                  (placeholder) Chamfer / Hausdorff / MSD / Dice
 configs/                   (placeholder) config files + fixed seeds
 
-notebooks/
-  ● explore_skull.ipynb            first-look + the older .ply batch conversion
+notebooks/                         see notebooks/README.md for the map and the
+                                   two hard rules (kernel/VRAM, module reload)
+  ● MSN_train_skullfix.ipynb       RUN a training. Only its section 1 changes
+                                   between runs; repeats use --from-run
+  ● MSN_compare_runs.ipynb         JUDGE the results: metric glossary, epoch-
+                                   matched table, paired tests, main tables
+  ● MSN_surface_quality.ipynb      mesh reconstruction + density diagnostics
   ● MSN_baseline_pretrained.ipynb  BASELINE: author's weights on aligned data
+  ● explore_skull.ipynb            first-look + the older .ply batch conversion
   demo/
-    ● MSN_train_skullfix.ipynb     MAIN: train this project's model + evaluate
     MSN_model_inference_demo.ipynb  original vendor demo (superseded -- its
                                     eval re-breaks pair alignment, see the
                                     baseline notebook's intro for the measurement)

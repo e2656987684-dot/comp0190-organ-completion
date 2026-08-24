@@ -166,6 +166,14 @@ def parse_args():
                          "vector is kept as the first key row, so this only ADDS keys. Changes "
                          "no weight shape, so old checkpoints load into it silently -- the flag "
                          "goes into run.json and report.Run.arch_key reads it back.")
+    ap.add_argument("--from-run", default="",
+                    help="replay another run's hyper-parameters, so a repeat is a repeat. Takes a "
+                         "run name (looked up in experiments_log/ first, then experiments/) or a "
+                         "path to a run.json. Every field that run recorded becomes the default "
+                         "here; anything you type explicitly still wins. Fields that run predates "
+                         "fall back to the default that was in force when it was trained, the same "
+                         "convention report.Run.arch_key uses. Use it for repeats: "
+                         "--from-run tie_qk --run-name tie_qk_r2.")
     ap.add_argument("--overwrite", action="store_true",
                     help="allow this run to write into a --run-name directory that already "
                          "holds artifacts. Off by default: the checkpoint and the CSV log are "
@@ -175,6 +183,102 @@ def parse_args():
     ap.add_argument("--mixed-precision", action="store_true")
     ap.add_argument("--seed", type=int, default=42)
     return ap.parse_args()
+
+
+# run.json field -> (argparse dest, default in force before that field existed).
+# The second element matters: a run trained before a flag existed recorded nothing
+# for it, and replaying it must reproduce the behaviour it actually had, not
+# today's default. Same convention as report.Run.arch_key.
+_REPLAY = {
+    "config": ("config", "paper"),
+    "epochs": ("epochs", 300),          # the ceiling in force before it was recorded
+    "minutes": ("minutes", 90.0),
+    "lr": ("lr", 3e-4),
+    "batch_size": ("batch_size", 4),
+    "seed": ("seed", 42),
+    "n_folds": ("n_folds", 0),
+    "fold": ("fold", 0),
+    "early_stop_patience": ("early_stop_patience", 20),
+    "loss": ("loss", "cd_dcd"),
+    "dcd_weight": ("dcd_weight", 1.0),
+    "dcd_lambda": ("dcd_lambda", 1.0),
+    "repulsion_weight": ("repulsion_weight", 0.0),
+    "repulsion_r0_mm": ("repulsion_r0", 2.0),
+    "repulsion_k": ("repulsion_k", 4),
+    "per_point_attn": ("per_point_attn", False),
+    "tie_qk_init": ("tie_qk_init", False),
+}
+# Recorded fields that are outputs, not settings -- never replayed.
+_REPLAY_IGNORE = {"params", "epochs_run", "scale_mm", "final", "best_val_loss",
+                  "best_val_cd_t_mm", "train_ids", "val_ids", "clump_thresh_mm",
+                  "use_text", "dropout", "weight_decay"}
+
+
+def apply_from_run(args, argv):
+    """Fill `args` from another run's run.json, leaving anything typed explicitly alone.
+
+    Repeats are only informative if they are actually the same configuration, and
+    retyping eight flags by hand is exactly where a repeat silently stops being a
+    repeat -- `notext` vs `cd_rep05_full` differed in one flag out of nine, and
+    that only held up because the flags were checked field by field afterwards.
+    This does that check up front instead.
+
+    `--data`, `--out-dir`, `--run-name`, `--overwrite`, `--mixed-precision` and
+    `--warmup-steps` are deliberately NOT replayed: they say where a run writes
+    and how it is driven, not what is being trained.
+    """
+    if not args.from_run:
+        return args
+
+    for cand in (os.path.join(REPO_ROOT, "experiments_log", args.from_run, "run.json"),
+                 os.path.join(REPO_ROOT, "experiments", args.from_run, "run.json"),
+                 os.path.join(REPO_ROOT, "experiments", "msn_skullfix", args.from_run, "run.json"),
+                 args.from_run):
+        if os.path.isfile(cand):
+            src = cand
+            break
+    else:
+        raise SystemExit(f"--from-run {args.from_run!r}: no run.json found "
+                         f"(looked in experiments_log/, experiments/, experiments/msn_skullfix/)")
+
+    with open(src) as fh:
+        meta = json.load(fh)
+
+    typed = {a.split("=")[0] for a in argv if a.startswith("--")}
+    replayed, missing, overridden = [], [], []
+
+    for key, (dest, fallback) in _REPLAY.items():
+        flag = "--" + dest.replace("_", "-")
+        value = meta.get(key, fallback)
+        if key not in meta:
+            missing.append(key)
+        if value is None:                      # e.g. "fold": null when n_folds == 0
+            value = fallback
+        if flag in typed:
+            overridden.append(f"{dest}={getattr(args, dest)!r} (记录里是 {value!r})")
+            continue
+        setattr(args, dest, value)
+        replayed.append(f"{dest}={value!r}")
+
+    # use_text is stored positively but driven by --no-text, so it inverts.
+    if "--no-text" not in typed:
+        args.no_text = not bool(meta.get("use_text", True))
+        replayed.append(f"no_text={args.no_text!r}")
+    else:
+        overridden.append(f"no_text={args.no_text!r}")
+
+    unknown = set(meta) - set(_REPLAY) - _REPLAY_IGNORE
+    print(f"[--from-run] 复制自 {os.path.relpath(src, REPO_ROOT)}")
+    print(f"[--from-run] 复制了 {len(replayed)} 个字段: {', '.join(sorted(replayed))}")
+    if overridden:
+        print(f"[--from-run] ⚠ 你手动指定的，未被覆盖: {'; '.join(overridden)}")
+        print("[--from-run] ⚠ 这不再是一次严格的重复实验 —— 它和原轮相差上面这些字段。")
+    if missing:
+        print(f"[--from-run] 记录里没有这些字段，按「它当时生效的默认值」补: {', '.join(sorted(missing))}")
+    if unknown:
+        print(f"[--from-run] ⚠ run.json 里有本脚本不认识的字段，没有复制: {', '.join(sorted(unknown))}")
+        print("[--from-run] ⚠ 说明这个 run 是更新的代码跑的，先确认再继续。")
+    return args
 
 
 def guard_out_dir(out_dir, overwrite):
@@ -263,7 +367,7 @@ def make_warmup(keras, target_lr, steps):
 
 
 def main():
-    args = parse_args()
+    args = apply_from_run(parse_args(), sys.argv[1:])
     # Before TensorFlow, so a re-used --run-name fails in a second rather than
     # after ten seconds of CUDA start-up.
     out_dir = os.path.join(args.out_dir, args.run_name) if args.run_name else args.out_dir
