@@ -568,11 +568,19 @@ def fig_curves(runs, scale_mm=None, height=400, settle_epoch=20):
     from plotly.subplots import make_subplots
 
     has_clump = any("val_clump_metric" in r.hist for r in runs)
-    titles = ["Loss", "val CD_t (mm)"] + (["val clumping <2mm (%)"] if has_clump else [])
+    # Only runs trained after 2026-08-25 carry this: it is the metric the thesis
+    # reports, logged every --defect-every epochs purely so that "had this run
+    # converged on the number that matters?" is answerable. Sampled, so most rows
+    # are NaN and each trace is drawn from its own non-NaN subset.
+    has_defect = any("val_defect_cov_mm" in r.hist for r in runs)
+    titles = (["Loss", "val CD_t (mm)"]
+              + (["val clumping <2mm (%)"] if has_clump else [])
+              + (["val defect coverage (mm)"] if has_defect else []))
     fig = make_subplots(rows=1, cols=len(titles), subplot_titles=titles)
 
     series = [("val_loss", 1)] + [("val_cd_t_metric", None)] + \
-             ([("val_clump_metric", 100)] if has_clump else [])
+             ([("val_clump_metric", 100)] if has_clump else []) + \
+             ([("val_defect_cov_mm", 1)] if has_defect else [])
     settled = {k: [] for k, _ in series}
 
     for n, run in enumerate(runs):
@@ -583,8 +591,13 @@ def fig_curves(runs, scale_mm=None, height=400, settle_epoch=20):
             if key not in run.hist:
                 continue
             y = run.hist[key] * (s if mul is None else mul)
-            settled[key].append(y[settle_epoch:])
-            fig.add_trace(go.Scatter(y=y, name=run.label,
+            ok = y.notna()
+            if not ok.any():
+                continue
+            settled[key].append(y[ok][settle_epoch:])
+            fig.add_trace(go.Scatter(x=y.index[ok] + 1, y=y[ok], name=run.label,
+                                     mode="lines+markers" if ok.sum() < len(y) else "lines",
+                                     marker=dict(size=4),
                                      line=dict(color=c, width=1.6), legendgroup=run.label,
                                      showlegend=show), row=1, col=col)
             show = False

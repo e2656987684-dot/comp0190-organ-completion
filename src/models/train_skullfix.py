@@ -54,12 +54,35 @@ Added once data grew from 50 to 100 skulls (see devlog 2026-08-05):
       devlog 2026-08-24. Starting a run now refuses to write into a directory
       that already holds artifacts unless this flag is passed.
 
-  --epochs 10000 -> 300, --minutes 55 -> 90.  With EarlyStopping doing the
-      real work now, a 10000-epoch ceiling and a 55-minute budget shorter than
-      that ceiling no longer made sense together. 300 epochs is a real cap
-      (~47 min at ~9.5s/epoch on 100 skulls) sized well above where this model
-      is expected to plateau; 90 minutes sits above that so it is a backstop,
-      not the thing that usually stops the run.
+  --epochs 10000 -> 300 -> 600, --minutes 55 -> 90 -> 180.  Both are ceilings,
+      not budgets: EarlyStopping is what stops a run, so raising them costs
+      nothing unless they are reached. They are set high because a run that hits
+      the ceiling was still descending and has to be discarded, which is far
+      more expensive than a ceiling nobody reaches.
+
+Added 2026-08-25, all three from the same finding (see devlog):
+
+  --early-stop-patience 20 -> 30.  Across the nine valid runs, five survived a
+      mid-run gap of 15-20 epochs without a new val_loss record and then
+      improved again -- patience=20 was 1-5 epochs from killing them early, and
+      which side of that line a run lands on is a lottery worth up to 0.15 mm
+      (tie_qk stopped at 411 epochs, its repeat at 246). Runs whose longest
+      mid-run gap is under 15 just wait 10 more epochs, about two minutes.
+
+  --lr-patience.  Was derived from --early-stop-patience, so raising the stop
+      patience would have slowed the LR schedule too -- two changes at once, and
+      a different annealing pace from every earlier run. Now explicit, pinned at
+      the 10 they all used. The ordering constraint that voided the first four
+      runs (LR patience must stay below early-stop patience) is now checked at
+      startup instead of guaranteed by the formula.
+
+  --defect-every.  Every decision during training watches val_loss, while the
+      thesis reports defect-region coverage, and nothing recorded that metric
+      per epoch -- so "did this run converge on the metric that matters?" could
+      not be answered. This logs it every N epochs. DIAGNOSTIC ONLY: it must
+      never drive stopping or checkpoint selection, because choosing the epoch
+      by the same number the thesis reports, on the same 20 skulls, biases that
+      number optimistically.
 """
 
 from __future__ import annotations
@@ -80,6 +103,13 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__fi
 # after-the-fact surface-quality numbers mean the same thing.
 CLUMP_MM = 2.0
 
+# Kept equal to eval.report.DEFECT_MM. A ground-truth point counts as being in the
+# defect when the nearest point of the DEFECTIVE INPUT is further away than this;
+# 5 mm sits in the valley of that distance's bimodal distribution. Same definition
+# as the reported metric, so the per-epoch diagnostic below is directly comparable
+# with the defect_cov_mm column of experiments_log/eval_all_runs.csv.
+DEFECT_MM = 5.0
+
 
 def parse_args():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -90,12 +120,14 @@ def parse_args():
                          "writes straight into --out-dir, unchanged from before -- set this when "
                          "sweeping so successive runs don't overwrite each other's history.csv/best.h5.")
     ap.add_argument("--config", choices=["paper", "small"], default="paper")
-    ap.add_argument("--epochs", type=int, default=300,
-                    help="real ceiling now that --early-stop-patience is on by default: at "
-                         "~9.5s/epoch (100 skulls, batch 4) this is ~47 min if nothing ever "
-                         "stops it early. --minutes is a looser outer safety net, not the "
-                         "primary stop signal any more.")
-    ap.add_argument("--minutes", type=float, default=90.0,
+    ap.add_argument("--epochs", type=int, default=600,
+                    help="hard ceiling, NOT a budget: EarlyStopping is what normally stops a "
+                         "run, so raising this costs nothing unless it is actually reached. It "
+                         "is set high on purpose -- a run that hits the ceiling stopped while "
+                         "still descending and has to be discarded (see cd_rep05_truncated), "
+                         "which is far more expensive than a ceiling nobody reaches. At "
+                         "~10.6s/epoch, 600 would be ~106 min if nothing ever stopped it.")
+    ap.add_argument("--minutes", type=float, default=180.0,
                     help="wall-clock safety net -- sized to sit above what --epochs would take, "
                          "so in normal operation EarlyStopping (or the --epochs ceiling) binds "
                          "first and this is just a backstop against a run that never plateaus.")
@@ -103,10 +135,22 @@ def parse_args():
     ap.add_argument("--lr", type=float, default=3e-4)
     ap.add_argument("--warmup-steps", type=int, default=100,
                     help="linear LR ramp; without it the first few steps spike (CD ~5 -> ~40)")
-    ap.add_argument("--early-stop-patience", type=int, default=20,
+    ap.add_argument("--early-stop-patience", type=int, default=30,
                     help="stop once val_loss hasn't improved for this many epochs (0 disables). "
-                         "Without this the run only stops on --minutes/--epochs, which can land "
-                         "past the best epoch with no signal that it already peaked.")
+                         "Raised from 20 on 2026-08-25. Measured across the nine valid runs, "
+                         "five of them survived a mid-run gap of 15-20 epochs without a new "
+                         "val_loss record and then improved again -- i.e. patience=20 was 1-5 "
+                         "epochs away from killing them early, and which side of that line a "
+                         "run lands on is a lottery worth up to 0.15mm (tie_qk 411 epochs vs "
+                         "tie_qk_r2 246). Runs whose longest mid-run gap is under 15 simply "
+                         "wait 10 more epochs before stopping, i.e. ~2 minutes.")
+    ap.add_argument("--lr-patience", type=int, default=10,
+                    help="ReduceLROnPlateau patience. Pinned rather than derived from "
+                         "--early-stop-patience: it used to be `max(3, early_stop//2)`, so "
+                         "raising the stop patience silently slowed the LR schedule too and "
+                         "changed two things at once. Must stay below --early-stop-patience or "
+                         "the decay never fires -- that exact conflict (40 vs 20) voided this "
+                         "project's first four runs.")
     ap.add_argument("--loss", choices=["cd_dcd", "cd", "dcd"], default="cd_dcd",
                     help="cd_dcd = Chamfer + the paper's density-aware term. "
                          "'dcd' alone is the demo's loss and will NOT train from scratch "
@@ -180,6 +224,16 @@ def parse_args():
                          "rewritten from epoch 1 while run.json survives until the new run "
                          "ends, so a re-used name leaves a record and a set of weights that "
                          "describe different trainings (and nothing raises).")
+    ap.add_argument("--defect-every", type=int, default=10,
+                    help="log validation defect-region coverage (the metric the thesis reports) "
+                         "every N epochs; 0 disables. DIAGNOSTIC ONLY -- it never drives "
+                         "stopping or checkpoint selection, and it must not: selecting the "
+                         "epoch on the same 20 skulls the number is reported on would bias that "
+                         "number optimistically. It exists because the stopping rule watches "
+                         "val_loss while the conclusions read defect coverage, so until now "
+                         "there was no way to tell whether a run had converged on the metric "
+                         "that matters. Costs one extra validation forward pass every N epochs "
+                         "(~2-4%% at N=10).")
     ap.add_argument("--mixed-precision", action="store_true")
     ap.add_argument("--seed", type=int, default=42)
     return ap.parse_args()
@@ -199,6 +253,11 @@ _REPLAY = {
     "n_folds": ("n_folds", 0),
     "fold": ("fold", 0),
     "early_stop_patience": ("early_stop_patience", 20),
+    # Both added 2026-08-25. The fallbacks are what the earlier runs effectively
+    # used: lr_patience was derived as max(3, 20//2) = 10, and there was no
+    # per-epoch defect logging at all.
+    "lr_patience": ("lr_patience", 10),
+    "defect_every": ("defect_every", 0),
     "loss": ("loss", "cd_dcd"),
     "dcd_weight": ("dcd_weight", 1.0),
     "dcd_lambda": ("dcd_lambda", 1.0),
@@ -320,6 +379,65 @@ def guard_out_dir(out_dir, overwrite):
         "  Pick a different --run-name, or move that directory aside, or pass --overwrite\n"
         "  if you really mean to discard it. Training is not bit-reproducible on GPU, so a\n"
         "  checkpoint replaced here cannot be recreated.\n")
+
+
+def _nn_dist(query, ref, chunk=1024):
+    """Nearest-neighbour distance from each `query` point to `ref`, chunked numpy.
+
+    Brute force on purpose: the arrays here are small (at most 6144 x 4096, and
+    only ~400 query points once the defect mask is applied), and this keeps the
+    training script free of a KD-tree dependency it otherwise does not need.
+    """
+    ref2 = (ref ** 2).sum(1)
+    out = np.empty(len(query), dtype=np.float64)
+    for i in range(0, len(query), chunk):
+        q = query[i:i + chunk]
+        d2 = (q ** 2).sum(1)[:, None] - 2.0 * (q @ ref.T) + ref2[None, :]
+        out[i:i + chunk] = np.sqrt(np.maximum(d2.min(1), 0.0))
+    return out
+
+
+def make_defect_callback(keras, x_val, gt_val, inputs_val, scales_val, every):
+    """Log validation defect-region coverage every `every` epochs. DIAGNOSTIC ONLY.
+
+    WHY THIS EXISTS. Every decision during training watches `val_loss`: when to
+    stop, which epoch to checkpoint, when to drop the learning rate. The thesis
+    reports defect-region coverage. Until this callback there was no per-epoch
+    record of that metric at all (history.csv held cd_t / cd_p / dcd / clump), so
+    "had the run converged on the metric that matters?" was unanswerable -- and
+    measured, every run was still descending on val_cd_t when it stopped.
+
+    WHY IT MUST NOT DRIVE SELECTION. Choosing the checkpoint by this number would
+    pick the epoch that looks best on the same 20 skulls the number is reported
+    on, which biases the headline result optimistically. Watching `val_loss` -- a
+    different, merely correlated quantity -- and reporting defect coverage is the
+    clean arrangement. This callback only writes a column.
+
+    The mask is the same one `eval.report._defect_metrics` uses (ground-truth
+    points whose nearest INPUT point is further than DEFECT_MM), and distances are
+    converted with each skull's own scale, so the logged value is directly
+    comparable with the defect_cov_mm column of eval_all_runs.csv.
+    """
+    masks = []
+    for gt, inp, s in zip(gt_val, inputs_val, scales_val):
+        masks.append(_nn_dist(gt.astype(np.float64), inp.astype(np.float64)) > DEFECT_MM / s)
+
+    class _Defect(keras.callbacks.Callback):
+        def on_epoch_end(self, epoch, logs=None):
+            if logs is None:
+                return
+            # The key has to exist on the very first epoch or CSVLogger, which
+            # fixes its field names then, drops the column for the whole run.
+            due = epoch == 0 or (epoch + 1) % every == 0
+            if not due:
+                logs["val_defect_cov_mm"] = float("nan")
+                return
+            preds = self.model.predict(x_val, batch_size=1, verbose=0)
+            vals = [float(_nn_dist(g[m].astype(np.float64), p.astype(np.float64)).mean() * s)
+                    for p, g, m, s in zip(preds, gt_val, masks, scales_val)]
+            logs["val_defect_cov_mm"] = float(np.mean(vals))
+
+    return _Defect()
 
 
 class TimeBudget:
@@ -484,14 +602,21 @@ def main():
     # of the two. This was 40 against an early-stop patience of 20, which meant it
     # never fired once in any experiment: every run trained at a flat 3e-4 from the
     # end of warmup onwards, with nothing to damp late oscillation -- rep05 went
-    # from 1.25 to 2.07 train loss after epoch 104. Derived rather than hardcoded
-    # so that raising --early-stop-patience cannot silently disable it again.
-    # Half the early-stop patience, floored at 3 so it does not thrash, then capped
-    # at one below early stopping so the ordering holds even for tiny patiences
-    # (Keras accepts patience=0, meaning "reduce on the first bad epoch").
-    lr_patience = (min(max(3, args.early_stop_patience // 2), args.early_stop_patience - 1)
-                   if args.early_stop_patience > 0 else 8)
-    assert args.early_stop_patience <= 0 or lr_patience < args.early_stop_patience
+    # from 1.25 to 2.07 train loss after epoch 104.
+    #
+    # It used to be DERIVED from --early-stop-patience (half of it, floored at 3),
+    # which prevented that conflict but coupled two knobs: raising the stop patience
+    # also slowed the LR schedule, so a run got longer for two reasons at once and
+    # its annealing no longer matched the earlier runs'. Now explicit, defaulting to
+    # the 10 that every run so far actually used, with the ordering enforced here
+    # rather than by construction.
+    lr_patience = args.lr_patience
+    if args.early_stop_patience > 0 and lr_patience >= args.early_stop_patience:
+        raise SystemExit(
+            f"\n--lr-patience ({lr_patience}) must be smaller than --early-stop-patience "
+            f"({args.early_stop_patience}).\nOtherwise early stopping fires first and the "
+            f"learning-rate decay never runs -- that exact conflict (40 vs 20) is what voided\n"
+            f"this project's first four runs. See experiments_log/README.md.\n")
 
     callbacks = [
         budget.make_callback(tf.keras),
@@ -518,8 +643,14 @@ def main():
         tf.keras.callbacks.ReduceLROnPlateau(
             monitor="val_loss", factor=0.5, patience=lr_patience, min_lr=1e-6,
             min_delta=0.0, verbose=1),
-        tf.keras.callbacks.CSVLogger(os.path.join(out_dir, "history.csv")),
     ]
+    if args.defect_every > 0:
+        # BEFORE CSVLogger: callbacks run in list order, and this one writes its
+        # value into `logs` for CSVLogger to pick up.
+        callbacks.append(make_defect_callback(
+            tf.keras, x_val, gt[val_idx], inputs[val_idx],
+            [float(v) for v in data["scale_mm"][val_idx]], args.defect_every))
+    callbacks.append(tf.keras.callbacks.CSVLogger(os.path.join(out_dir, "history.csv")))
     if args.early_stop_patience > 0:
         # A run previously stopped purely because --minutes ran out, one epoch
         # past its best val_loss, with nothing noticing (ModelCheckpoint still
@@ -552,6 +683,8 @@ def main():
         "lr": args.lr, "batch_size": args.batch_size, "seed": args.seed,
         "n_folds": args.n_folds, "fold": args.fold if args.n_folds > 0 else None,
         "early_stop_patience": args.early_stop_patience,
+        "lr_patience": args.lr_patience,
+        "defect_every": args.defect_every,
         "loss": args.loss, "dcd_weight": args.dcd_weight, "dcd_lambda": args.dcd_lambda,
         "repulsion_weight": args.repulsion_weight,
         "repulsion_r0_mm": args.repulsion_r0, "repulsion_k": args.repulsion_k,
