@@ -27,6 +27,19 @@ CLOSES TWO THINGS AT ONCE (TODO 16 and 20).
       them. Metrics here come from `report.metrics_from_points(..., inp=)`, the
       same function used for every other run, so the columns line up exactly.
 
+⚠️ k 折之后**必须每折各跑一次**。
+  The baseline has to be scored on the SAME skulls as the model it is compared
+  with, and k-fold gives each fold a different validation set. Pass the fold's
+  run through `--split-from` and give each its own `--out`:
+
+      for f in 0 1 2 3 4; do
+        python src/eval/eval_pretrained_baseline.py --split-from cv_cdrep_f$f \
+               --out experiments_log/pretrained_baseline/eval_f$f.csv
+      done
+
+  Everything the script needs is already a flag; nothing is hardcoded to the
+  current 20-skull split.
+
 WHAT IT WRITES
   experiments_log/pretrained_baseline/eval_val20_x{draws}.csv -- one row per
   (draw, skull). The older eval_val20.csv is left alone: it is the archived

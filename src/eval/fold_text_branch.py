@@ -1,4 +1,4 @@
-"""Verify that the text branch is exactly four bias vectors, by folding it away.
+r"""Verify that the text branch is exactly four bias vectors, by folding it away.
 
 WHAT THIS CHECKS
   The published architecture conditions the decoder on a text embedding: BERT
@@ -38,6 +38,12 @@ WHAT IT DOES NOT SHOW
   bias values on its own when the branch is gone. The proposed explanation (the
   branch acts as a lever on the effective learning rate of that bias direction)
   remains a hypothesis; see devlog 2026-08-21 and 2026-08-25.
+
+⚠️ k 折之后**建议在最终模型上重跑一次**。
+  The algebraic conclusion (the branch equals four bias vectors) is a property of
+  the architecture and cannot change. The NUMBERS quoted from it can: the bias
+  norms, and the "46% of the target" figure, are specific to the weights passed
+  in. Point `--run` at whichever checkpoint the thesis reports and re-read them.
 
     python src/eval/fold_text_branch.py [--run msn_skullfix/cd_rep05_full] [--n 5]
 """

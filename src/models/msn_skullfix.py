@@ -32,7 +32,15 @@ DELIBERATE BEHAVIOUR CHANGES (each is a fix, and each is flagged)
      distinct indices instead. `sampler="original"` restores the demo.
   5. The demo's encoder called `UniformSampler(4096)` on a 4096-point input --
      sampling as many centroids as there are points, i.e. no downsampling at
-     all, while still paying the O(N^2) kNN. The configs here always downsample.
+     all, while still paying the O(N^2) kNN.
+     ⚠️ CORRECTION (2026-08-25): this entry used to end "The configs here always
+     downsample", which is FALSE for `paper()` -- the config every run has used.
+     `paper()` keeps sg1_sample = n_in = 4096 on purpose, faithfully reproducing
+     the published behaviour, so its E-SG1 sampler only PERMUTES the points and
+     has no effect on the function (everything downstream is permutation-
+     equivariant until the pool). Only `small()` downsamples at stage 1.
+     Consequence for the "real FPS" idea on the roadmap: in `paper()` it would
+     change nothing at E-SG1 and applies only to E-SG2 (2048 of 4096).
   6. eye_seed. The demo trains with `np.random.rand(1,1)` but infers with
      `tf.zeros` -- a train/inference mismatch. Fixed to zeros everywhere.
   7. Final layer forced to float32 so mixed precision cannot corrupt the

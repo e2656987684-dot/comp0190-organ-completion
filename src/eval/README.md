@@ -16,6 +16,7 @@ PY=/root/miniconda3/envs/comp0190-msn/bin/python
 | 脚本 | 怎么跑 | 结果在哪看 | 写文件吗 | GPU | 耗时 |
 |---|---|---|---|---|---|
 | **`fold_text_branch.py`** | `$PY src/eval/fold_text_branch.py` | **只打印到终端** | ❌ 不写 | ✅ 建两个 187M 模型 | ~40 秒 |
+| **`sampling_floor.py`** | `$PY src/eval/sampling_floor.py` | 终端 + CSV | ✅ 写 `experiments_log/sampling_floor.csv` | ❌ 纯 CPU | 约 3~4 分钟（100 颗） |
 | **`eval_pretrained_baseline.py`** | `$PY src/eval/eval_pretrained_baseline.py` | 终端 + CSV | ✅ 写 `experiments_log/pretrained_baseline/eval_val20_x5.csv`（**不动**旧的 `eval_val20.csv`） | ✅ 296.9M（含 BERT） | 十几分钟 |
 | `make_report_figures.py` | `$PY src/eval/make_report_figures.py` | `reports/figures/*.png` | ✅ 覆盖写 | ✅ | 几分钟 |
 | `make_report_deck.py` | `$PY src/eval/make_report_deck.py` | `reports/progress_report.pptx` | ✅ 覆盖写 | ❌ | 秒级 |
@@ -45,3 +46,27 @@ kernel 占着显存时这些脚本会 OOM。
 
 **训练产出的数字不适用这条**：训练在 GPU 上不可复现，所以逐颅骨指标必须冻进
 `experiments_log/eval_all_runs.csv`，删权重之前也必须先冻。
+
+
+## ⚠️ k 折之后要重跑什么
+
+**现在所有的结果都是暂时的。** 定稿时要跑 k 折，届时大部分数字会变。规矩是：
+**凡是消费当前结果的东西，代码必须留在仓库里、并且留好输入口**，不能把数字抄进文档就算完。
+下面这张表就是那个清单。
+
+| 产物 | k 折后 | 输入口 / 怎么重跑 |
+|---|---|---|
+| `experiments_log/sampling_floor.csv` | ❌ **不用重跑** | 只依赖数据和点数，与划分/权重无关。这是唯一一个 fold-independent 的量，所以它默认跑全部 100 颗而不是某一折的 20 颗 |
+| `experiments_log/eval_all_runs.csv` | ✅ **必须** | `report.eval_runs(REPO, runs)` —— 把折的 run 传进去即可 |
+| `experiments_log/surface_quality.csv` | ✅ **必须** | `MSN_surface_quality.ipynb` 的 `MODELS`（⚠️ 存档 cell 是合并写，不会丢旧行） |
+| `experiments_log/pretrained_baseline/eval_val20_x5.csv` | ✅ **每折各一次** | `eval_pretrained_baseline.py --split-from <fold run> --out <per-fold csv>`。基线必须在**和它对比的模型同一批颅骨**上评 |
+| `fold_text_branch.py` 打印的数字 | ⚠️ 建议重跑 | `--run <最终模型>`。代数结论不会变，但 bias 范数和「46%」是那份权重特有的 |
+| `experiments_log/README.md` 里的对照表 | ✅ **必须手工更新** | 表里每个数字都来自上面那些 CSV |
+| `reports/figures/*.png`、`*.pptx` | ✅ **必须** | `make_report_figures.py` 的 `RUNS`（⚠️ 目前还指向已裁剪的 run） |
+
+### 两个 k 折会撞上的坑（现在就知道，省得到时候查）
+
+1. **`report.paired_stats` 在 k 折下不适用。** 它靠"所有 run 评的是同一批 20 颗颅骨"来逐颗配对；
+   各折的验证集不同，配不起来。k 折要的是**折间**均值 ± 标准差，是另一套聚合逻辑，得新写。
+   `MSN_compare_runs.ipynb` 第 1 节那条 `assert` 会先把你拦下来（这是故意的）。
+2. **`report.epoch_matched` 仍然可用**，而且更需要 —— 各折的停止轮数同样会不一样。
