@@ -1,25 +1,68 @@
 # CLAUDE.md — 给每一次新会话看的
 
-COMP0190 硕士项目：**颅骨点云补全**（SkullFix，100 对，80 训 / 20 验）。
+COMP0190 硕士项目：**颅骨点云补全**（SkullFix，100 对，80 训 / 20 验，单卡 4090）。
 模型是 MedShapeNet Foundation Model（MSN = PCT + BERT 文本条件，187M 参数）的重写版。
 **当前阶段：收尾**——逐条清 TODO、把结论固化成可复现的脚本、准备写论文。
 
-**这个文件只做路由，不复述内容。** 具体的数字和结论都在下面指的那些文件里，
-它们随时在更新，而这个文件不会。
+**这个文件只做路由和立规矩，不复述内容。** 具体数字都在它指的那些文件里，
+那些文件随时在变，而这个文件不会。
 
 ---
 
-## 开始干活之前，按这个顺序读
+## 一、这个项目是怎么走到今天的
 
-| 顺序 | 文件 | 读多少 |
+读状态之前先看这段，有了脉络再看细节会快很多。**这一节是历史，不会过期。**
+
+| 阶段 | 干了什么 | 留下的关键认识 |
 |---|---|---|
-| 1 | `TODO.md` **最后一节** | **只读最后一节**。前面都是历史快照，最后一节永远是当前有效清单 |
-| 2 | `devlog.md` **最后 5~8 条日期条目** | ⚠️ **不要全读**（近 3000 行）。倒着往前读到你需要的地方为止 |
-| 3 | `experiments_log/README.md` | 全读。有效性分界、噪声判据、采样地板、各 run 的定性都在这 |
-| 4 | `src/eval/README.md` | 全读。每个脚本怎么跑、输出到哪、**k 折后要不要重跑** |
-| 5 | `notebooks/README.md` | 训练与判读两个 notebook 的分工 |
+| **数据** | 修了两个正确性 bug：配对错位（complete/defective 各自归一化 → 落到不同坐标系）、各向异性体素间距 | 数据只走 `prepare_skullfix.py` 这一条路 |
+| **跑得动** | 距离矩阵从 tile 改成 `\|a\|²−2a·b+\|b\|²`，187M 模型在单卡上从跑不动变成 372ms/步 | 不用缩模型 |
+| **发现真问题** | 原以为"预测表面不够平滑"，实测被推翻——GT 和预测的局部粗糙度基本持平；**真正确凿的差距是点密度**（扎堆 11.2% vs GT 0.0%） | 前提要先量再信 |
+| **损失** | DCD 超参扫（后作废）→ **repulsion loss 生效**（扎堆 13.6% → 1.3%）→ **DCD 消融证明可以去掉** | **最优配置 = CD + repulsion**，全项目最硬的一条 |
+| **评测协议** | 发现全点云指标 93.6% 的权重在"复现输入"上 → 建**缺损区限定指标**；掩码定义错过一次，已修正 | **主指标 = 缺损区覆盖** |
+| **⛔ 有效性重划分** | 查证发现 `ReduceLROnPlateau(patience=40) > EarlyStopping(20)` 是本项目自己写的配置错误，导致衰减从未触发 → **最初四轮整档作废** | 自己的错误不进论文 |
+| **架构侧尝试** | 逐点交叉注意力 ❌（注意力从未启动）· `--no-text` ✅（现象成立）· Q/K 初始绑定 ❌（重复实验推翻） | 80 个样本学不出注意力选择性 |
+| **判读方法学** | 三把尺子分开、同轮次表、逐颅骨配对检验；发现"0.004mm 噪声底线"是撞大运 | 见下面「判读规矩」 |
+| **收尾（进行中）** | 仓库整理（19G→5.6G）· TODO ⚙️ 清空 · 折叠验证 · 基线重评 · 采样地板正式入库 | 剩下的见 TODO 最后一节 |
 
-**当前各 run 的数字，跑这条命令看**（比任何写死的表都可靠）：
+---
+
+## 二、读状态：两档模式，自己选
+
+### 全面模式（默认，实测约 90k token — 上下文窗口的 45%）
+
+用户希望新会话尽量了解全貌。按这个顺序读：
+
+| 顺序 | 文件 | 读多少 | 约 token |
+|---|---|---|---|
+| 1 | `TODO.md` **最后一节** | 全读（当前有效清单） | 3.8k |
+| 2 | `devlog.md` | **全读**（34 条日期条目，倒着读更快进入状态） | **60.3k** |
+| 3 | `experiments_log/README.md` | 全读（有效性分界、噪声判据、采样地板、各 run 定性） | 7.6k |
+| 4 | `src/eval/README.md` | 全读（脚本怎么跑 + **k 折后要重跑什么**） | 2k |
+| 5 | `notebooks/README.md` | 全读（两个 notebook 的分工） | 1k |
+| 6 | `README.md` | 全读（对外的项目描述、范围决策） | 2k |
+| 7 | 四个模块 docstring | `msn_skullfix.py`(76行) `train_skullfix.py`(85行) `mesh_viz.py`(45行) `report.py` 的「三把尺子」注释块 | 4k |
+| 8 | `MSN_compare_runs.ipynb` 的 markdown | 指标词典 + 判决标准（干活时最常查的） | 4k |
+
+### 轻量模式（约 20k token）
+
+**这份 CLAUDE.md 自己就占 5.3k**，是两档模式共同的底。
+
+**如果上下文吃紧、或者发现回答开始不准，改用这个**：第 1、3、4 项全读，
+devlog 只读**最近 8 条**。上面的「项目脉络」已经覆盖了更早的内容。
+
+### 定位 devlog 的技巧（不用手工维护目录）
+
+```bash
+grep -n "^## " devlog.md          # 34 条的日期 + 标题 + 行号，永远是最新的
+grep -n "⭐\|⚠️" devlog.md | head -40   # 标了星号和警告的条目，重要性排序
+```
+
+标题里的 ⭐ 越多越重要；⚠️ 表示那条包含**对先前结论的更正**。
+
+### 当前各 run 的数字，跑这条命令看
+
+比任何写死的表都可靠：
 
 ```bash
 cd /root/comp0190-organ-completion && /root/miniconda3/envs/comp0190-msn/bin/python -c "
@@ -30,29 +73,31 @@ print(df.groupby('run', sort=False)[['CD_t_mm','defect_cov_mm','clump_%']].mean(
 
 ---
 
-## 工作约定（用户定的，别自作主张）
+## 三、工作约定（用户定的，别自作主张）
 
 **训练和分析脚本都由用户自己跑。** 我负责改代码、写脚本、判读结果、落盘记录。
 
 **我给命令时必须一并说明**（缺一不可）：
 
-- 怎么跑（完整命令，用 `/root/miniconda3/envs/comp0190-msn/bin/python`）
+- 完整命令（用 `/root/miniconda3/envs/comp0190-msn/bin/python`）
 - **结果在哪看**：只打印？还是写文件？写哪个文件？
 - **要不要 GPU**（要的话提醒先 Restart notebook 的 kernel，否则 OOM）
 - 大概多久
 - **k 折之后要不要重跑**
 
 **写新脚本时**：放进 `src/eval/`，同时在 `src/eval/README.md` 的表里加一行。
-不加就等于又造了一个"临时脚本数字"（见下面的硬规矩）。
+不加就等于又造了一个"临时脚本数字"（见下面第 3 条）。
+
+**给用户的回答**：用中文；结论先行；数字要带出处；不确定就说不确定。
 
 ---
 
-## 硬规矩 —— 每一条都是踩过坑换来的
+## 四、硬规矩 —— 每一条都是踩过坑换来的
 
 ### 记录
 
 1. **`devlog.md` 只追加，不改历史。** 结论变了就写**新条目**说明更正，旧条目原样保留
-   （它记录的是"当时怎么想的"）。
+   （它记录的是"当时怎么想的"，那本身有信息量）。
 2. **`TODO.md` 追加式快照**，每次在文件末尾另起一节、重列完整清单，**最后一节有效**。
    ⚠️ 例外：**回答清单上的开放问题**（而非完成一项工作）可以就地改最后一节 ——
    2026-08-25 破过一次例，理由记在 devlog 里。
@@ -62,38 +107,50 @@ print(df.groupby('run', sort=False)[['CD_t_mm','defect_cov_mm','clump_%']].mean(
 
 ### 实验
 
-4. **重复实验必须用 `--from-run`**，不要手抄 flag。它照抄那个 run 记录的全部 20 个超参。
+4. **重复实验必须用 `--from-run`**，不要手抄 flag。它照抄那个 run 记录的全部 20 个超参，
+   并在你手动覆盖某项时警告"这不再是严格重复"。
 5. **加新的训练 flag，必须同时**：① 写进 `run.json` 的 meta ② 加进 `train_skullfix._REPLAY`。
    只做①会警告；两个都忘 → `--from-run` **静默漏掉它**，重复实验悄悄变成另一个实验。
 6. **加改变网络拓扑的开关，必须加进 `report.Run.arch_key`。** 不加会**静默**把旧权重
-   灌进新拓扑（`load_weights` 在拓扑维度上不设防，形状对得上就不报错）。
-7. **训练在 GPU 上不可逐位复现**（没开 `enable_op_determinism`）。所以：
-   **删权重之前必须先把逐颅骨指标冻进 `experiments_log/eval_all_runs.csv`。**
-8. **推理是确定性的**（验证时走固定种子的 stateless 采样，实测复算偏差 0.00e+00）。
-   训练不可复现、评估可复现，这两件事在论文里要分开写。
+   灌进新拓扑（`load_weights` 在拓扑维度上不设防，权重形状对得上就不报错）。
+7. **训练在 GPU 上不可逐位复现**（没开 `enable_op_determinism`，实测同 seed 从第 1 轮就分岔）。
+   所以：**删权重之前必须先把逐颅骨指标冻进 `experiments_log/eval_all_runs.csv`。**
+8. **推理是确定性的**（验证走固定种子的 stateless 采样，实测复算偏差 0.00e+00）。
+   **训练不可复现、评估可复现**，这两件事在论文里要分开写。
+9. **诊断指标绝不参与模型选择。** `--defect-every` 记的缺损区覆盖只写进 history，
+   不驱动早停或 checkpoint —— 用报告结果的同一个指标、在同一批 20 颗颅骨上挑最好看的一轮，
+   会让报告值乐观偏置。**用 `val_loss` 选、用缺损覆盖报，这个安排本身是对的，论文值得写一句。**
 
-### 会静默出错的地方（都发生过）
+### 会静默出错的地方（都真的发生过）
 
-9. `--run-name` 撞名 → 曾覆盖掉 `cd_only` 的 checkpoint，而 `run.json` 只在训练结束时写，
-   所以记录和权重指向两次不同的训练且不报错。**已加保护**，要覆盖得显式 `--overwrite`。
-10. `ReduceLROnPlateau` 的 patience **必须小于** EarlyStopping 的，否则衰减永不触发 ——
-    这个冲突作废了本项目最初四轮。现在 `--lr-patience` 是显式参数并在启动时检查。
-11. `ReduceLROnPlateau` 的 `min_delta` 默认 1e-4 是**绝对阈值**，换个损失量级就失效。本项目设 0。
-12. `CSVLogger` 在**第 1 轮**就固定列名 → 新增的 per-epoch 指标必须在 epoch 0 就有值。
-13. `model(x)` 逐个调用**每次泄漏 0.29 GiB**，用 `model.predict(..., batch_size=1)`。
-14. **notebook 里覆盖写 CSV 会毁掉算不出来的行**（`surface_quality.csv` 出过）。一律**合并写**。
-15. 改过 `report.py` / `mesh_viz.py` 之后，notebook 要 `importlib.reload`，否则拿到旧模块。
+10. **`--run-name` 撞名** → 曾覆盖掉 `cd_only` 的 checkpoint，而 `run.json` 只在训练结束时写，
+    于是记录和权重指向两次不同的训练且不报错。**已加保护**，要覆盖得显式 `--overwrite`。
+11. **`ReduceLROnPlateau` 的 patience 必须小于 EarlyStopping 的**，否则衰减永不触发 ——
+    这个冲突作废了最初四轮。现在 `--lr-patience` 是显式参数并在启动时检查。
+12. **`ReduceLROnPlateau` 的 `min_delta` 默认 1e-4 是绝对阈值**，换个损失量级就失效
+    （`cd_dcd` 在 1.0 附近能过线，纯 `cd` 在 0.07 附近就全被判为无改善）。本项目设 0。
+13. **`CSVLogger` 在第 1 轮就固定列名** → 新增的 per-epoch 指标必须在 epoch 0 就有值，
+    否则整列被丢掉。
+14. **`model(x)` 逐个调用每次泄漏 0.29 GiB**，用 `model.predict(..., batch_size=1)`。
+15. **notebook 里覆盖写 CSV 会毁掉算不出来的行**（`surface_quality.csv` 出过；
+    `eval_all_runs.csv` 里 `baseline`/`dcd_l2` 两行的权重已删、再也算不出来）。**一律合并写。**
+16. **改过 `report.py` / `mesh_viz.py` 之后 notebook 要 `importlib.reload`**，否则拿到旧模块。
     ⚠️ 只 reload 这两个纯 numpy/plotly 模块；`msn_skullfix` 定义 Keras 层，热重载会出怪事。
-16. **CD_t 有两个口径，不要混引**：`run.json` 的 `best_val_cd_t_mm`（训练期、数据集平均 scale）
-    比 `report.py` 的逐颅骨口径系统性低约 0.09mm。**论文引 `eval_all_runs.csv`**。
+17. **CD_t 有两个口径，不要混引**：`run.json` 的 `best_val_cd_t_mm`（训练期、数据集平均 scale、
+    全程最优）比 `report.py` 的逐颅骨口径系统性**低约 0.09mm**。**论文引 `eval_all_runs.csv`。**
+18. **编辑器会把移动过的文件写回老路径**（`git mv` 之后 VS Code 重存了一份旧版）。
 
 ---
 
-## 判读结果的规矩
+## 五、判读规矩
 
 **主指标是 `defect_cov_mm`（缺损区覆盖）。** 只有约 6.4% 的 GT 点在缺损区，其余是输入里
 已给、模型只需复现的表面 —— 全点云指标主要在量"抄得像不像"。实测佐证：2×2 消融在缺损
-覆盖上四格全部显著，在全点云 CD_t 上**全部不显著**。
+覆盖上四格**全部显著**，在全点云 CD_t 上**全部不显著**。
+
+⚠️ **`defect_prec_mm` 可以被糊弄**（不往洞里放点就好看），必须和 `defect_n_pred` 一起看。
+真实案例：预训练基线的缺损精度只比本工作差 1.06×，但它只往洞里放了 174 个点（GT 约 395）
+—— 它根本没填洞。
 
 **一个改动算"成立"，要同时满足四条**（详见 `MSN_compare_runs.ipynb` 第 3 节）：
 
@@ -103,20 +160,25 @@ print(df.groupby('run', sort=False)[['CD_t_mm','defect_cov_mm','clump_%']].mean(
 - [ ] 方向与机制解释一致
 
 **三把尺子互不替代**：① 同配置重跑（训练随机性）② 逐颅骨配对（换一批颅骨还成不成立）
-③ 末段 epoch 抖动。⚠️ **配对检验能证明"两个模型不同"，不能证明"这个配置更好"** ——
-同配置训练两次本身就能产生跨颅骨一致的差异（`tie_qk` 那对就是）。
+③ 末段 epoch 抖动（报告值本身抖多少）。
+
+⚠️ **配对检验能证明"两个模型不同"，不能证明"这个配置更好"** —— 同配置训练两次本身
+就能产生跨颅骨一致的差异（`tie_qk` 那对就是活例子）。
+
+⚠️ **同配置重跑的差异通常 ≲0.005mm，但当一个 run 在另一个停下的位置上仍在下降时可达 0.15mm。**
+读小差异前先看 `epoch_matched` 的末几列有没有走平。
 
 ⚠️ **`lr_fix_only` 之前的四轮**（`baseline_es20` / `dcd_w3` / `dcd_l2` / `rep05_void`）
-**是⛔错误性实验**，不得作为基线或对照，权重也已删除。详见 `experiments_log/README.md` 开头。
+**是 ⛔ 错误性实验**，不得作为基线或对照，权重也已删除。方法比较的基线用 `lr_fix_only`。
 
 ---
 
-## ⚠️ 现在所有结果都是暂时的
+## 六、⚠️ 现在所有结果都是暂时的
 
-**定稿前要跑 k 折**（4 配置 × 5 折 ≈ 18~20h），届时大部分数字会变。所以：
+**定稿前要跑 k 折**（4 配置 × 5 折 ≈ 18~20h），届时大部分数字会变。所以用户定了一条规矩：
 
 > **凡是消费当前结果的东西，代码必须留在仓库里、并且留好输入口** ——
-> 不能把数字抄进文档就算完。
+> 不能把数字抄进文档就算完，还要注明"k 折之后要不要重跑"。
 
 **哪些要重跑、从哪个口子重跑，见 `src/eval/README.md` 的「k 折之后要重跑什么」一节。**
 
@@ -124,24 +186,28 @@ print(df.groupby('run', sort=False)[['CD_t_mm','defect_cov_mm','clump_%']].mean(
 配不起来，得新写折间聚合）；`MSN_compare_runs.ipynb` 第 1 节那条 assert 会先拦下你。
 
 ⚠️ **k 折是所有改进做完之后的终审，不是现在做的事**（用户明确过）。
-重复实验（跑两次）是现阶段分辨运气的工具，**不是 k 折的替代**。
+重复实验（同配置跑两次）是现阶段分辨运气的工具，**不是 k 折的替代**。
 
 ---
 
-## 论文范围（2026-08-21 用户拍板，详见 devlog）
+## 七、论文范围（2026-08-21 用户拍板，详见 devlog）
 
 **进论文**：注意力坍缩自查 · 移植审计 + `tie_qk` 的受控验证 · 训练配置与原实现的差异表 ·
 采样地板与跨域不可比性 · 缺损区限定评测 + DCD 2×2 · 文本分支的折叠证明。
 
 **不进论文**：自己引入并修好的错误（EarlyStopping/LR 冲突、缺损区掩码定义错误、
 repulsion 未无量纲化）· 逐点交叉注意力的阴性结果。
-**原则：自己写错的错误留在 devlog 作为工作记录，不进论文。**
+
+> **原则：自己写错的错误留在 devlog 作为工作记录，不进论文。**
+> 但「与参考实现的差异 + 受控验证」是**正面材料**，要写（`tie_qk` 属于后者）。
 
 ⚠️ **不能写 "zero-shot"** —— 已查证那套预训练权重训练时**见过颅骨数据**。
+而且可能存在训练/测试污染（MedShapeNet 部分源自 AutoImplant = SkullFix 的来源），
+方向是**让本工作的领先被低估**，论文要主动写明。
 
 ---
 
-## 环境
+## 八、环境
 
 ```bash
 cd /root/comp0190-organ-completion
@@ -153,20 +219,24 @@ PY=/root/miniconda3/envs/comp0190-msn/bin/python     # conda 环境 comp0190-msn
 - 训练约 **10.6 s/epoch**，近期各轮 220~410 轮 = **40~70 分钟**。
 - `/root` 是临时盘（重部署会清空），`/workspace` 是网络盘。
   **代码靠 git，产物和数据靠 `bash sync_workspace.sh backup`**，两者互补，都要做。
-- `experiments/`（权重，5.6G）和 `data/` 都 gitignored；`experiments_log/`（run.json +
-  history.csv + 各种 CSV）**跟踪进 git**。
+  （`/root/.claude` 是指向 `/workspace/.claude-config` 的软链接，所以对话记录本身是安全的。）
+- `experiments/`（权重 5.6G）和 `data/` 都 gitignored；
+  `experiments_log/`（run.json + history.csv + 各种 CSV）**跟踪进 git**。
 
-## 仓库地图
+## 九、仓库地图
 
 ```
 src/data/prepare_skullfix.py     raw nrrd -> 对齐点云对 -> data/cache/*.npz（唯一数据路径）
 src/models/msn_skullfix.py       重写版网络 + 损失 + 指标（训练本项目模型用）
 src/models/msn_demo_arch.py      原 demo 架构逐字复制（只用来跑作者的预训练权重）
-                                 ⚠️ 两者权重不兼容，别混
-src/models/train_skullfix.py     训练 CLI
+                                 ⚠️ 两者权重不兼容，别混；加载失败是静默的
+src/models/train_skullfix.py     训练 CLI（--from-run / --overwrite / --defect-every ...）
 src/eval/report.py               Run / eval_runs / epoch_matched / paired_stats / fig_*
 src/eval/mesh_viz.py             mesh 重建 + surface_stats（⚠️ 重建只能看，不能算指标）
-src/eval/*.py                    各个一次性分析脚本，见 src/eval/README.md
-notebooks/MSN_train_skullfix.ipynb   发起训练（只改第 1 节控制面板）
-notebooks/MSN_compare_runs.ipynb     判读结果（指标词典、判决标准都在里面）
+src/eval/fold_text_branch.py     文本分支折叠验证（证明它等于 4 个偏置向量）
+src/eval/sampling_floor.py       采样地板（k 折后不用重跑）
+src/eval/eval_pretrained_baseline.py  预训练基线重评（k 折后每折各跑一次）
+notebooks/MSN_train_skullfix.ipynb    发起训练（只改第 1 节控制面板）
+notebooks/MSN_compare_runs.ipynb      判读结果（指标词典、判决标准都在里面）
+notebooks/MSN_surface_quality.ipynb   mesh 可视化 + 密度诊断
 ```
