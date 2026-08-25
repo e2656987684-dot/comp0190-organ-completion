@@ -1,12 +1,24 @@
 # 3D Organ Shape Completion (COMP0190)
 
-Comparing voxel-based and geometry-aware deep learning for 3D organ shape
-completion under a self-built, controlled corruption dataset.
+Geometry-aware deep learning for 3D cranial shape completion, evaluated with a
+defect-region-restricted protocol.
 
 - **Student:** Qi Jinyu   **Supervisor:** Petru Manescu
-- **Target organ:** cranial / skull (complete shapes from SkullFix / SkullBreak)
-- **Idea:** build a self-constructed corrupted dataset, then compare one voxel
-  baseline vs one geometry-aware method under one unified evaluation framework.
+- **Target organ:** cranial / skull, using SkullFix's own defective/complete pairs
+- **Baseline:** the released MedShapeNet Foundation Model weights, run on this
+  project's aligned data. ⚠️ *Whether a voxel baseline is also trained is still
+  undecided* -- see `src/corruption/` and the note below.
+
+**Scope changes (2026-08-25), both previously flagged in TODO:**
+
+- ❌ **"self-built corrupted dataset" is dropped.** SkullFix ships its own
+  defective/complete pairs and those are what every result here uses;
+  `src/corruption/` was never implemented and the claim was never true of the
+  work. Removed from the title rather than left as an aspiration.
+- ⏸ **"voxel baseline" is still open.** No voxel code exists. If it does get
+  built, feed its binary output through `prepare_skullfix.py`'s pipeline
+  (marching cubes -> dense sample -> FPS to 6144) so both sides share the
+  sampling floor and stay comparable.
 
 ## Repo structure
 
