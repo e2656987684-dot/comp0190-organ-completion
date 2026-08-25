@@ -80,7 +80,7 @@ def main():
     import report as rp
 
     weights = os.path.join(REPO, "msn_downloads", "MSN_weights3.h5")
-    data = np.load(os.path.join(REPO, "data", "cache", "skullfix_pairs_4096_6144.npz"))
+    data = np.load(os.path.join(REPO, rp.DATA_CACHE))
     ids, inputs, gt, scales = data["ids"], data["inputs"], data["gt"], data["scale_mm"]
     meta = json.load(open(os.path.join(REPO, "experiments_log", args.split_from, "run.json")))
     val = meta["val_ids"][:args.n_skulls] if args.n_skulls else meta["val_ids"]

@@ -162,10 +162,12 @@ def parse_args():
                          "shares: 1->36%%, 2->53%%, 3->63%%, 5->74%%, 10->85%%. Past ~10 "
                          "Chamfer barely votes and shape accuracy is at risk.")
     ap.add_argument("--dcd-lambda", type=float, default=1.0,
-                    help="exponent in DCD's density weight 1/count^lambda. Targets clumping "
-                         "specifically, where --dcd-weight scales DCD's distance and density "
-                         "factors together. The more targeted knob for the 11.2%%-of-points-"
-                         "within-2mm problem (ground truth is 0.0%%).")
+                    help="exponent in DCD's density weight 1/count^lambda. BY CONSTRUCTION it "
+                         "targets clumping specifically, where --dcd-weight scales DCD's distance "
+                         "and density factors together -- but that is design intent: the only run "
+                         "that tested it is in the voided pre-LR-fix tier, so nothing valid has "
+                         "been measured here. Moot in practice, since the best configuration "
+                         "drops DCD entirely in favour of --repulsion-weight.")
     ap.add_argument("--repulsion-weight", type=float, default=0.0,
                     help="0 = off (default, identical to previous behaviour). Adds a hinge "
                          "penalty on predicted points closer than --repulsion-r0 to each "

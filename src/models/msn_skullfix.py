@@ -370,11 +370,18 @@ def make_loss(name, dcd_weight=1.0, n_lambda=1.0,
 
     n_lambda is the exponent in DCD's density weight 1/count^n_lambda, i.e. how
     hard a predicted point is punished for being the nearest neighbour of many
-    ground-truth points. Raising it targets clumping SPECIFICALLY, whereas
-    dcd_weight scales DCD's distance and density factors together -- DCD is
-    `1 - exp(-dist*alpha) * 1/count^n_lambda`, a product of both. If the goal is
-    the 11.2%-of-points-within-2mm problem rather than accuracy in general,
-    n_lambda is the more targeted knob of the two.
+    ground-truth points. BY CONSTRUCTION it should target clumping specifically,
+    where dcd_weight scales DCD's distance and density factors together -- DCD is
+    `1 - exp(-dist*alpha) * 1/count^n_lambda`, a product of both.
+
+    That is design intent, not a measurement. The one run that tested it (dcd_l2,
+    lambda 2) saw density barely move while accuracy improved, and a gradient-
+    saturation story was written to explain it -- but that run predates the
+    learning-rate fix and sits in the voided tier, so it cannot support any
+    conclusion, and the explanation built on it was withdrawn on 2026-08-25
+    without ever being tested. Nothing valid has been measured about this knob
+    here. Since repulsion now handles density directly and DCD was dropped
+    entirely from the best configuration, there is no reason to revisit it.
 
     repulsion_weight adds `repulsion_loss` on top of whichever base loss `name`
     selects, so the ablation that matters -- does DCD still earn its place once a

@@ -46,6 +46,13 @@ F1_THRESHOLDS = (0.05, 0.03)
 # starts admitting shared surface.
 DEFECT_MM = 5.0
 
+# The one place the cache filename is written down. It was repeated verbatim in
+# four files, which is fine right up until it isn't: nothing enforces that they
+# agree, and a mismatch would silently evaluate two runs on different data. This
+# is a de-duplication, not preparation for anything -- `eval_runs` also takes an
+# explicit `data=` if a one-off needs a different file.
+DATA_CACHE = os.path.join("data", "cache", "skullfix_pairs_4096_6144.npz")
+
 
 # --------------------------------------------------------------------------- #
 # loading
@@ -300,7 +307,7 @@ def arch_config(msn, arch):
     return cfg
 
 
-def eval_runs(repo, runs, n_skulls=None, device="/GPU:0"):
+def eval_runs(repo, runs, n_skulls=None, device="/GPU:0", data=None):
     """Per-skull metrics for every run, on that run's own validation split.
 
     Returns a long-form DataFrame: one row per (run, skull). Millimetre columns
@@ -319,7 +326,7 @@ def eval_runs(repo, runs, n_skulls=None, device="/GPU:0"):
     import msn_skullfix as msn
     import mesh_viz as mv
 
-    data = np.load(os.path.join(repo, "data", "cache", "skullfix_pairs_4096_6144.npz"))
+    data = np.load(data or os.path.join(repo, DATA_CACHE))
     ids, inputs, gt, scales = data["ids"], data["inputs"], data["gt"], data["scale_mm"]
     # Only needed by text-branch runs; a no-text checkout may not have cached it.
     text_path = os.path.join(repo, "data", "cache", "bert_skull.npy")

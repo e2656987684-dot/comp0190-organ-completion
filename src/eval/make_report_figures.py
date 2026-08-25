@@ -66,7 +66,7 @@ def main():
     import report as rp
 
     runs = rp.load_runs(REPO, RUNS)
-    data = np.load(os.path.join(REPO, "data", "cache", "skullfix_pairs_4096_6144.npz"))
+    data = np.load(os.path.join(REPO, rp.DATA_CACHE))
     ids, inputs, gt, scales = data["ids"], data["inputs"], data["gt"], data["scale_mm"]
     text = np.load(os.path.join(REPO, "data", "cache", "bert_skull.npy"))
 

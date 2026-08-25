@@ -77,7 +77,7 @@ def main():
     if not cfg.use_text:
         raise SystemExit(f"{args.run} was trained without the text branch; nothing to fold")
 
-    data = np.load(os.path.join(REPO, "data", "cache", "skullfix_pairs_4096_6144.npz"))
+    data = np.load(os.path.join(REPO, rp.DATA_CACHE))
     ids, inputs = data["ids"], data["inputs"]
     pos = [int(np.where(ids == s)[0][0]) for s in run.meta["val_ids"][:args.n]]
     text = np.load(os.path.join(REPO, "data", "cache", "bert_skull.npy"))
