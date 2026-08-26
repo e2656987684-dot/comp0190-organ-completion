@@ -36,4 +36,5 @@ MSN_compare_runs    第 1 节把新 run 加进 RUNS
                     experiments_log/README.md 加一行 + devlog.md 追加一节 + git commit
 ```
 
-⚠️ **重复实验一定要用 `FROM_RUN`**（它照抄那个 run 的全部 18 个超参），不要手抄 flag。
+⚠️ **重复实验一定要用 `FROM_RUN`**（它照抄那个 run 的全部 19 个超参，见
+`train_skullfix._REPLAY`），不要手抄 flag。

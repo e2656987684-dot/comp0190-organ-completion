@@ -16,6 +16,7 @@ PY=/root/miniconda3/envs/comp0190-msn/bin/python
 | 脚本 | 怎么跑 | 结果在哪看 | 写文件吗 | GPU | 耗时 |
 |---|---|---|---|---|---|
 | **`fold_text_branch.py`** | `$PY src/eval/fold_text_branch.py` | **只打印到终端** | ❌ 不写 | ✅ 建两个 187M 模型 | ~40 秒 |
+| **`attention_collapse.py`** | `$PY src/eval/attention_collapse.py`<br>（`--runs <run> ...` 指定，`--n` 改颅骨数） | 终端 + CSV | ✅ **合并写** `experiments_log/attention_collapse.csv` | ✅ 每套架构建一个 187M 模型 | 约 3~5 分钟（默认 3 个 run） |
 | **`sampling_floor.py`** | `$PY src/eval/sampling_floor.py` | 终端 + CSV | ✅ 写 `experiments_log/sampling_floor.csv` | ❌ 纯 CPU | 约 3~4 分钟（100 颗） |
 | **`eval_pretrained_baseline.py`** | `$PY src/eval/eval_pretrained_baseline.py` | 终端 + CSV | ✅ 写 `experiments_log/pretrained_baseline/eval_val20_x5.csv`（**不动**旧的 `eval_val20.csv`） | ✅ 296.9M（含 BERT） | 十几分钟 |
 | `make_report_figures.py` | `$PY src/eval/make_report_figures.py` | `reports/figures/*.png` | ✅ 覆盖写 | ✅ | 几分钟 |
@@ -60,6 +61,7 @@ kernel 占着显存时这些脚本会 OOM。
 | `experiments_log/eval_all_runs.csv` | ✅ **必须** | `report.eval_runs(REPO, runs)` —— 把折的 run 传进去即可 |
 | `experiments_log/surface_quality.csv` | ✅ **必须** | `MSN_surface_quality.ipynb` 的 `MODELS`（⚠️ 存档 cell 是合并写，不会丢旧行） |
 | `experiments_log/pretrained_baseline/eval_val20_x5.csv` | ✅ **每折各一次** | `eval_pretrained_baseline.py --split-from <fold run> --out <per-fold csv>`。基线必须在**和它对比的模型同一批颅骨**上评 |
+| `experiments_log/attention_collapse.csv` | ✅ **每个最终模型各一次** | `attention_collapse.py --runs <各折的 run>`。坍缩是**一组权重**的性质，与划分无关，所以结论几乎不会变；但论文引的是最终模型那一份，得从那份读。⚠️ 三套以上架构一次跑会撞显存（TF 不归还显存），分几次跑即可 —— CSV 是合并写的 |
 | `fold_text_branch.py` 打印的数字 | ⚠️ 建议重跑 | `--run <最终模型>`。代数结论不会变，但 bias 范数和「46%」是那份权重特有的 |
 | `experiments_log/README.md` 里的对照表 | ✅ **必须手工更新** | 表里每个数字都来自上面那些 CSV |
 | `reports/figures/*.png`、`*.pptx` | ✅ **必须** | `make_report_figures.py` 的 `RUNS`（⚠️ 目前还指向已裁剪的 run） |
