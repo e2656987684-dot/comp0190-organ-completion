@@ -166,6 +166,49 @@ def signed_deviation(pred, gt, scale_mm, k=24):
     return np.einsum("ni,ni->n", P - centre, normal) * scale_mm
 
 
+ROUGH_K = 16    # the neighbourhood the original 0.736/0.760 claim was made at
+
+
+def local_roughness(points, scale_mm, k=ROUGH_K):
+    """How far each point sits off the plane fitted to its own k neighbours, mm.
+
+    Returns (residual_mm, normal_spread_mm). The residual is the roughness
+    reading; the spread is how thick the neighbourhood itself is along that
+    normal, which is what says whether the reading can be trusted.
+
+    ⚠️ THIS METRIC IS CONTAMINATED AND THE CONTAMINATION CANNOT BE TUNED AWAY.
+      A skull is a shell 5-7 mm thick, so a neighbourhood large enough to fit a
+      plane to also reaches the OTHER surface, and the plane ends up straddling
+      both. Measured on ground truth: `normal_spread_mm` at k=24 is ~6 mm, i.e.
+      exactly the shell thickness. Going smaller does not escape it and going
+      larger swaps it for a different contaminant -- the skull's own curvature,
+      which at k=128 spans a ~23 mm patch. There is no clean k; see devlog
+      2026-08-07. Absolute values are therefore NOT interpretable as "how rough
+      this surface is".
+
+      What survives is the COMPARISON. Applying an identically biased metric to
+      ground truth and to a prediction makes most of the bias common-mode, so
+      the difference between the two still carries information -- with the
+      caveat that the two clouds have different densities, so they are not
+      contaminated to quite the same degree.
+
+    The point being measured is excluded from the fit (`k + 1` neighbours, self
+    dropped). Including it would pull the plane toward the point and bias the
+    residual down by roughly 1/k.
+    """
+    P = np.asarray(points, dtype=np.float64)
+    idx = cKDTree(P).query(P, k=k + 1, workers=-1)[1][:, 1:]
+    nb = P[idx]
+    centre = nb.mean(1)
+    X = nb - centre[:, None, :]
+    _, evec = np.linalg.eigh(np.einsum("nki,nkj->nij", X, X) / k)
+    normal = evec[:, :, 0]                      # smallest eigenvector = surface normal
+    resid = np.abs(np.einsum("ni,ni->n", P - centre, normal)) * scale_mm
+    proj = np.einsum("nki,ni->nk", X, normal) * scale_mm
+    spread = np.percentile(proj, 95, axis=1) - np.percentile(proj, 5, axis=1)
+    return resid, spread
+
+
 def surface_stats(pred, gt, scale_mm):
     """The numbers that decide whether a training change actually helped.
 
@@ -174,7 +217,16 @@ def surface_stats(pred, gt, scale_mm):
     """
     sp_p, sp_g = local_spacing(pred, scale_mm), local_spacing(gt, scale_mm)
     dev = signed_deviation(pred, gt, scale_mm)
+    rough_p, _ = local_roughness(pred, scale_mm)
+    rough_g, _ = local_roughness(gt, scale_mm)
     return {
+        # surface roughness -- normalised by spacing so the two clouds compare
+        # despite different densities. ⚠️ read local_roughness's warning first:
+        # only the pred-vs-gt DIFFERENCE means anything, never the absolute value.
+        "rough_norm": float(np.median(rough_p) / np.median(sp_p)),
+        "rough_norm_gt": float(np.median(rough_g) / np.median(sp_g)),
+        "rough_mm": float(np.median(rough_p)),
+        "rough_mm_gt": float(np.median(rough_g)),
         # density uniformity -- the clearest current gap vs ground truth
         "clump_pct": 100.0 * (sp_p < CLUMP_MM).mean(),
         "clump_pct_gt": 100.0 * (sp_g < CLUMP_MM).mean(),
