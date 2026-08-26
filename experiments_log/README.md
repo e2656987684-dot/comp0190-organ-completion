@@ -242,9 +242,11 @@ CSV 是**逐颅骨一行**的，按那折的 `val_ids` 过滤取平均即可，�
 （无饿死，归一化是恒等操作）该对得上，而它是 39.7 vs 51.4。旧脚本还有别的不同，
 **而它没入库，无从对照**。论文引本表。
 
-⚠️ **n=3 的边界**：`eff_frac` 跨颅骨 std 中位 1.66e-07，12/16 与编码器数字绰绰有余；
-但 `tie_qk` D2-STA3 是 0.058、`frac_starved` 在 STA4 上是 27%±12%。
-**若论文要引 `tie_qk` D2 的具体数，先 `--n 20` 重跑一次**（约 20 分钟）。
+⚠️ **n=3 的边界（读表时注意，不是待办）**：`eff_frac` 跨颅骨 std 中位 1.66e-07 ——
+**12/16 那个计数、structural/learned 的划分、编码器各数都远在噪声之上，可以直接引**。
+但 `tie_qk` D2-STA3 的 std 是 0.058、`frac_starved` 在 D2-STA4 上是 27%±12%
+—— **这两个数只能引数量级，不要引小数点后两位**。
+真需要更紧的话 `--n 20` 约 20 分钟（用户 2026-08-26 决定不做）。
 
 ## 权重保留策略（2026-08-24 裁剪）
 
@@ -256,7 +258,7 @@ CSV 是**逐颅骨一行**的，按那折的 `val_ids` 过滤取平均即可，�
 
 | | run | 权重 | 说明 |
 |---|---|---|---|
-| ✅ 保留 | `lr_fix_only`、`rep_w05`、`cd_only`、`cd_rep05_full`、`cd_rep05_r2`、`tie_qk`、`notext`、`pp_attn`（+ 8/24 之后的 `tie_qk_r2`、`notext_r2`） | 各一个 `best.h5` | 有效轮次，将来还要在上面算新指标（Poisson 重建、粗糙度度量）。<br>⚠️ **「注意力自查」这条理由已消除**（2026-08-26，见上一节）：`tie_qk` / `cd_rep05_full` / `pp_attn` 的数字已冻进 `attention_collapse.csv`，**这三份权重现在可删**（约 2.1 GB）。⚠️ 但若打算 `--n 20` 重跑，先跑完再删 |
+| ✅ 保留 | `lr_fix_only`、`rep_w05`、`cd_only`、`cd_rep05_full`、`cd_rep05_r2`、`tie_qk`、`notext`、`pp_attn`（+ 8/24 之后的 `tie_qk_r2`、`notext_r2`） | 各一个 `best.h5` | 有效轮次，将来还要在上面算新指标（Poisson 重建、粗糙度度量）。<br>⚠️ **「注意力自查」这条保留理由已消除**（2026-08-26，见上一节）：`tie_qk` / `cd_rep05_full` / `pp_attn` 的数字已冻进 `attention_collapse.csv`。⏸ **但用户 8/26 决定先留着** —— 磁盘不紧张，而删权重是单向的。真要回收时这三份约 2.1 GB |
 | ⛔ 已删 | `baseline_es20`、`dcd_w3`、`dcd_l2`、`rep05_void`、`drop01_rejected`、`cd_rep05_truncated` | 已删除 | 错误性/作废轮次，不会再作为评估对象 |
 | — | 所有 run 的 `last.h5` | 已删除 | `EarlyStopping(restore_best_weights=True)` 使它与 `best.h5` **逐字节相同**（13 个 run 实测 md5 一致），纯冗余 9.1 GiB |
 
