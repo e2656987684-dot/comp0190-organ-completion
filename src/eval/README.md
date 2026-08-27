@@ -18,6 +18,7 @@ PY=/root/miniconda3/envs/comp0190-msn/bin/python
 |---|---|---|---|---|---|
 | **`fold_text_branch.py`** | `$PY src/eval/fold_text_branch.py` | **只打印到终端** | ❌ 不写 | ✅ 建两个 187M 模型 | ~40 秒 |
 | **`attention_collapse.py`** | `$PY src/eval/attention_collapse.py`<br>（`--runs <run> ...` 指定，`--n` 改颅骨数） | 终端 + CSV | ✅ **合并写** `experiments_log/attention_collapse.csv` | ✅ 每套架构建一个 187M 模型 | 约 3~5 分钟（默认 3 个 run） |
+| **`point_to_surface.py`** | `$PY src/eval/point_to_surface.py`<br>（`--self-test` 只跑合成几何） | 终端 + CSV | ✅ **合并写** `experiments_log/p2s.csv` | ✅ 建一个 187M 模型（推理完就释放） | 约 3~5 分钟（8 颗） |
 | **`normal_quality.py`** | `$PY src/eval/normal_quality.py`<br>（`--self-test` 只跑合成对照，不碰数据） | 终端 + CSV | ✅ **合并写** `experiments_log/normal_quality.csv` | ❌ 纯 CPU（但 marching cubes 峰值 1~2GB/体数据） | 约 2~4 分钟（8 颗 × 2 个体数据） |
 | **`roughness.py`** | `$PY src/eval/roughness.py`（`--runs` / `--n`） | 终端 + CSV | ✅ **合并写** `experiments_log/roughness.csv` | ✅ 建一个 187M 模型 | 约 1 分钟 |
 | **`sampling_floor.py`** | `$PY src/eval/sampling_floor.py` | 终端 + CSV | ✅ 写 `experiments_log/sampling_floor.csv` | ❌ 纯 CPU | 约 3~4 分钟（100 颗） |
@@ -25,6 +26,11 @@ PY=/root/miniconda3/envs/comp0190-msn/bin/python
 | `make_report_figures.py` | `$PY src/eval/make_report_figures.py` | `reports/figures/*.png` | ✅ 覆盖写 | ✅ | 几分钟 |
 | `make_report_deck.py` | `$PY src/eval/make_report_deck.py` | `reports/progress_report.pptx` | ✅ 覆盖写 | ❌ | 秒级 |
 | `make_progress_deck.py` | `$PY src/eval/make_progress_deck.py` | `reports/progress_report_2.pptx` | ✅ 覆盖写 | ❌ | 秒级 |
+
+⚠️⚠️ **队列陷阱（2026-08-27 发现）**：`surface_quality.csv` 取的是「`ids` 顺序里前 8 颗
+验证颅骨」（`000 004 010 012 018 022 030 031`），而 `roughness.csv` / `normal_quality.csv` /
+`p2s.csv` 取的是「`val_ids` 顺序前 8 颗」（`083 053 070 045 044 039 022 080`）——
+**两批只重合 1 颗**。跨这两组 CSV 并排任何数字都是在比不同的颅骨。
 
 ⚠️ **需要 GPU 的脚本跑之前，先把 notebook 的 kernel Restart** —— 一个 187M 模型就占 15.5/24 GiB，
 kernel 占着显存时这些脚本会 OOM。
@@ -38,7 +44,7 @@ kernel 占着显存时这些脚本会 OOM。
 | 模块 | 做什么 |
 |---|---|
 | `report.py` | `Run` / `load_runs` / `eval_runs`（逐颅骨指标）/ `epoch_matched`（同轮次）/ `paired_stats`（配对检验）/ 各种 `fig_*` |
-| `mesh_viz.py` | 点云 → mesh 重建、`surface_stats`（扎堆率/间距 CV/有符号偏差/**粗糙度**）、`local_roughness`（⚠️ 读它的 docstring：这个度量被骨壳厚度污染，只有 GT-vs-pred 的**差值**有意义）、诊断图 |
+| `mesh_viz.py` | ⛔ **其 `signed_deviation` / `dev_*` 已于 2026-08-27 判定过时，停止引用**（高估 1.64×，且对表面偏移结构性失明——拟合平面落在骨壳正中，`outside_pct` 恒 ≈50%）。改用 `point_to_surface.py` 的 `p2s_*`。代码保留，理由见其 docstring。<br>点云 → mesh 重建、`surface_stats`（扎堆率/间距 CV/有符号偏差/**粗糙度**）、`local_roughness`（⚠️ 读它的 docstring：这个度量被骨壳厚度污染，只有 GT-vs-pred 的**差值**有意义）、诊断图 |
 
 ⚠️ 改完这两个模块，notebook 里要 `importlib.reload(rp)` 或重启 kernel，否则拿到的是缓存的旧模块。
 
@@ -65,6 +71,7 @@ kernel 占着显存时这些脚本会 OOM。
 | `experiments_log/surface_quality.csv` | ✅ **必须** | `MSN_surface_quality.ipynb` 的 `MODELS`（⚠️ 存档 cell 是合并写，不会丢旧行） |
 | `experiments_log/pretrained_baseline/eval_val20_x5.csv` | ✅ **每折各一次** | `eval_pretrained_baseline.py --split-from <fold run> --out <per-fold csv>`。基线必须在**和它对比的模型同一批颅骨**上评 |
 | `experiments_log/attention_collapse.csv` | ✅ **每个最终模型各一次** | `attention_collapse.py --runs <各折的 run>`。坍缩是**一组权重**的性质，与划分无关，所以结论几乎不会变；但论文引的是最终模型那一份，得从那份读。⚠️ 三套以上架构一次跑会撞显存（TF 不归还显存），分几次跑即可 —— CSV 是合并写的 |
+| `experiments_log/p2s.csv` | ✅ **必须** | `point_to_surface.py --runs <最终模型>`。网格/GT 那一侧只依赖数据，预测那一侧依赖权重 |
 | `experiments_log/normal_quality.csv` | ❌ **不用重跑** | 只依赖 GT 数据与点数，**全程无模型参与**，与划分/权重无关（同 `sampling_floor.csv`）。它是 TODO 9 的闸门，不是结果 |
 | `experiments_log/roughness.csv` | ⚠️ **只在论文引用这个比较时才需要** | `roughness.py --runs <最终模型>`。GT 那一侧只依赖数据、与划分无关；预测那一侧取决于引哪份权重 |
 | `fold_text_branch.py` 打印的数字 | ⚠️ 建议重跑 | `--run <最终模型>`。代数结论不会变，但 bias 范数和「46%」是那份权重特有的 |

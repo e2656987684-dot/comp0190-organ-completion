@@ -362,10 +362,15 @@ def main():
     report(df)
 
     out = os.path.join(REPO, args.out)
-    if os.path.exists(out):                     # merge on (id, k)
+    if os.path.exists(out):
         old = pd.read_csv(out)
-        keep = ~old.set_index(["id", "k"]).index.isin(df.set_index(["id", "k"]).index)
-        df = pd.concat([old[keep.tolist()], df], ignore_index=True)
+        # ⚠️ 键要先统一成字符串再比：`id` 是 '083' 这种带前导零的编号，
+        # 写进 CSV 再读回来会被 pandas 解析成整数 83，于是 ('run', 83) 对不上
+        # ('run', '083')，旧行被当成不同的行留下来 —— 实测重跑一次就变成 16 行。
+        KEY = ['id', 'k']
+        k_old = old[KEY].astype(str).apply(tuple, axis=1)
+        k_new = set(df[KEY].astype(str).apply(tuple, axis=1))
+        df = pd.concat([old[~k_old.isin(k_new)], df], ignore_index=True)
     df.to_csv(out, index=False)
     print(f"\n{len(df)} rows -> {args.out}")
 

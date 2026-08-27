@@ -95,9 +95,12 @@ def analyse(repo, specs, n_skulls=8, device="/GPU:0"):
             model = msn.build_model(cfg)
             for run in group:
                 model.load_weights(run.weights)
-                # Same 8 skulls as surface_quality.csv: the first of the run's own
-                # validation ids, in `ids` order. Keeping the cohort identical is
-                # what lets the two tables sit next to each other.
+                # ⚠️ NOT the same 8 skulls as surface_quality.csv. That table uses
+                # "the first 8 validation skulls in `ids` order"; this uses the
+                # first 8 in `val_ids` order, as do normal_quality.py and
+                # point_to_surface.py. The two sets share exactly ONE skull, so
+                # numbers here must never be put beside surface_quality's without
+                # recomputing one of them on the other's cohort (2026-08-27).
                 val = run.meta["val_ids"][:n_skulls]
                 pos = [int(np.where(ids == sid)[0][0]) for sid in val]
                 x = [inputs[pos]]
@@ -173,11 +176,15 @@ def main():
     df = analyse(REPO, args.runs, n_skulls=args.n)
 
     out = os.path.join(REPO, args.out)
-    if os.path.exists(out):          # merge on (run, id, k), never overwrite
+    if os.path.exists(out):
         old = pd.read_csv(out)
-        keep = ~old.set_index(["run", "id", "k"]).index.isin(
-            df.set_index(["run", "id", "k"]).index)
-        df = pd.concat([old[keep.tolist()], df], ignore_index=True)
+        # ⚠️ 键要先统一成字符串再比：`id` 是 '083' 这种带前导零的编号，
+        # 写进 CSV 再读回来会被 pandas 解析成整数 83，于是 ('run', 83) 对不上
+        # ('run', '083')，旧行被当成不同的行留下来 —— 实测重跑一次就变成 16 行。
+        KEY = ['run', 'id', 'k']
+        k_old = old[KEY].astype(str).apply(tuple, axis=1)
+        k_new = set(df[KEY].astype(str).apply(tuple, axis=1))
+        df = pd.concat([old[~k_old.isin(k_new)], df], ignore_index=True)
     df.to_csv(out, index=False)
     print(f"\n{len(df)} rows -> {args.out}")
 

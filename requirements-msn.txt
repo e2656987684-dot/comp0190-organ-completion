@@ -17,6 +17,11 @@
 #     下载），不装这个包的话 TFBertModel.from_pretrained 会直接报错退出。
 numpy<2
 trimesh
+# rtree（2026-08-27 加）：trimesh 的加速最近点查询 closest_point 需要它。
+# 本项目不用它算指标（src/eval/point_to_surface.py 自己实现的版本快约 20 倍），
+# 只用它做**独立对账** —— 每次运行在第一颗颅骨上核对 200 个点，实测最大差 4.4e-16mm。
+# 没装也能跑，那道对账会被跳过并打印提示。
+rtree
 pynrrd
 plotly
 fpsample

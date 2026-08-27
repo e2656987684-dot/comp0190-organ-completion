@@ -150,6 +150,27 @@ def local_spacing(points, scale_mm):
 def signed_deviation(pred, gt, scale_mm, k=24):
     """Signed distance from each predicted point to the local ground-truth surface, mm.
 
+    ⛔ SUPERSEDED 2026-08-27 -- DO NOT QUOTE `dev_*` ANY MORE.
+      `point_to_surface.py` measures the same thing against the actual
+      triangulated surface instead of a fitted plane, on the same points, and the
+      two disagree materially: this overstates the median deviation by 1.64x
+      (2.329 vs 1.466 mm, all 8 skulls, range 1.11-2.07x) and the spread by 1.49x.
+
+      Worse than overstating, it is BLIND to surface offset. The plane is fitted
+      to the centroid of the 24 nearest ground-truth points, and that
+      neighbourhood spans both sheets of the shell (spread 8.72 mm at k=24
+      against a 5-7 mm shell), so the plane lands in the MIDDLE of the bone. What
+      the sign then reports is which sheet the point is nearer, not which side of
+      its own surface it is on -- so `outside_pct` comes out at 50% whatever the
+      prediction does. Measured: across eight skulls it moves only 47.1-53.5%
+      (std 2.24pp) while the exact measure moves 27.4-52.7% (std 9.34pp), and the
+      two disagree on the SIGN of the bias for 6 of 8 skulls.
+
+      Kept, not deleted, for two reasons: `surface_quality.csv` holds rows
+      (`baseline`) whose weights are gone and which can never be recomputed, so
+      removing this would orphan archived columns; and it needs only the cached
+      point clouds, where the replacement needs the raw nrrd and marching cubes.
+
     Positive is outside the surface, negative inside. A local plane is fitted to
     the k nearest ground-truth points and the residual taken along its normal,
     so this separates "the surface is in the wrong place" from "the points are
