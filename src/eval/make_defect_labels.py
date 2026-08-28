@@ -31,6 +31,10 @@ WHAT IS CHECKED (a wrong label here becomes a wrong defect region everywhere)
 
 ⚠️ k 折之后不用重跑 —— 这是数据的性质，与划分和权重无关（同 `sampling_floor.csv`）。
 
+⚠️ 读 `defect_mask_labels.csv` 时必须 `dtype={"id": str}`。颅骨编号带前导零
+  （'083'），pandas 默认会读成整数 83，于是任何以 id 为键的比对都会静默落空 ——
+  这个坑本周已经在三处出现过。本文件自己读它时带了这个参数。
+
     python src/eval/make_defect_labels.py            # 全部 100 颗，约 35 分钟
     python src/eval/make_defect_labels.py --ids 083 053
 """
@@ -97,6 +101,15 @@ def main():
 
     print(f"\n{len(have)} 颗 -> {args.out}  ({os.path.getsize(out) / 1024:.0f} KB)")
     print(f"逐颅骨自检 -> {OUT_CSV}")
+    # ⚠️ The CSV only gains a row for skulls computed in THIS invocation; ones
+    # already cached are skipped and leave no record. That is a gap in the
+    # bookkeeping, not in the guarantee: `label_one` raises before returning, so
+    # a label existing in the npz at all means it passed every check at the time
+    # it was written. Reported rather than left to be noticed.
+    if len(df) < len(have):
+        print(f"⚠️ 自检 CSV 覆盖 {len(df)}/{len(have)} 颗 —— 其余是之前缓存的，"
+              f"当时同样通过了全部自检（`label_one` 不通过就不会返回标签）。"
+              f"\n   要补齐记录用 --force 全部重算（约 {len(have) * 20 / 60:.0f} 分钟）。")
     print(f"缺损占比 {df.defect_pct.mean():.2f}% ± {df.defect_pct.std():.2f}%"
           f"  范围 {df.defect_pct.min():.2f}~{df.defect_pct.max():.2f}%")
     print(f"缝隙点最大 {df.seam_pct.max():.2f}%   离面最大 {df.off_surface_pct.max():.3f}%")

@@ -229,6 +229,11 @@ __marimo__/
 *.ply
 *.obj
 *.npz
+# …但缺损区真值标签必须跟着 git 走（66 KB）。它是评测的输入，而不是产物：
+# 缺损区自 2026-08-28 起由数据集的 implant 真值定义，标签就存在这里。
+# 生成它需要原始 nrrd + marching cubes，而 data/ 是 gitignored 的、/root 又是
+# 临时盘 —— 不跟踪它，就等于「原始数据一丢，历史指标全部算不出来」。
+!experiments_log/defect_mask_labels.npz
 *.npy
 *.pth
 *.ckpt

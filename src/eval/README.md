@@ -18,6 +18,7 @@ PY=/root/miniconda3/envs/comp0190-msn/bin/python
 |---|---|---|---|---|---|
 | **`fold_text_branch.py`** | `$PY src/eval/fold_text_branch.py` | **只打印到终端** | ❌ 不写 | ✅ 建两个 187M 模型 | ~40 秒 |
 | **`attention_collapse.py`** | `$PY src/eval/attention_collapse.py`<br>（`--runs <run> ...` 指定，`--n` 改颅骨数） | 终端 + CSV | ✅ **合并写** `experiments_log/attention_collapse.csv` | ✅ 每套架构建一个 187M 模型 | 约 3~5 分钟（默认 3 个 run） |
+| **`recompute_eval_all.py`** | `$PY src/eval/recompute_eval_all.py` | 终端 + CSV | ✅ **合并写** `experiments_log/eval_all_runs.csv`（加 `defect_def` 列） | ✅ 4 套架构各一个 187M 模型 | 约 15 分钟 |
 | **`make_defect_labels.py`** | `$PY src/eval/make_defect_labels.py`<br>（`--ids 083 053` 只算指定几颗） | 终端 + 文件 | ✅ 写 `experiments_log/defect_mask_labels.npz` + `.csv` 自检 | ❌ 纯 CPU | 全部 100 颗约 **35 分钟**（已有的跳过） |
 | **`defect_mask_switch.py`** | `$PY src/eval/defect_mask_switch.py`<br>⚠️ 试算脚本，**不改动任何现有数据** | 终端 + CSV | ✅ 写 `experiments_log/defect_mask_switch.csv` + 缓存 `defect_mask_labels.npz` | ✅ 4 套架构各建一个 187M 模型 | 约 20 分钟（首次含 20 颗标签 7 分钟） |
 | **`defect_mask_audit.py`** | `$PY src/eval/defect_mask_audit.py`<br>（`--self-test` 只跑合成几何） | 终端 + CSV | ✅ **合并写** `experiments_log/defect_mask.csv` | ❌ 纯 CPU（marching cubes 峰值 1~2GB） | 约 7 分钟（20 颗 × 5 次 marching cubes） |
@@ -29,6 +30,9 @@ PY=/root/miniconda3/envs/comp0190-msn/bin/python
 | `make_report_figures.py` | `$PY src/eval/make_report_figures.py` | `reports/figures/*.png` | ✅ 覆盖写 | ✅ | 几分钟 |
 | `make_report_deck.py` | `$PY src/eval/make_report_deck.py` | `reports/progress_report.pptx` | ✅ 覆盖写 | ❌ | 秒级 |
 | `make_progress_deck.py` | `$PY src/eval/make_progress_deck.py` | `reports/progress_report_2.pptx` | ✅ 覆盖写 | ❌ | 秒级 |
+
+⚠️ **读任何带 `id` 列的 CSV 都要 `dtype={"id": str}`** —— 颅骨编号带前导零（`'083'`），
+pandas 默认读成整数 `83`，以 id 为键的比对会**静默落空**。本周已在三处出现过。
 
 ⚠️⚠️ **缺损区口径已于 2026-08-28 更换。** 缺损区不再由距离规则推定，而是数据集自带的
 植入物真值（`experiments_log/defect_mask_labels.npz`，由 `make_defect_labels.py` 生成）。
