@@ -177,10 +177,13 @@ def main():
 
     out = os.path.join(REPO, args.out)
     if os.path.exists(out):
-        old = pd.read_csv(out)
-        # ⚠️ 键要先统一成字符串再比：`id` 是 '083' 这种带前导零的编号，
-        # 写进 CSV 再读回来会被 pandas 解析成整数 83，于是 ('run', 83) 对不上
-        # ('run', '083')，旧行被当成不同的行留下来 —— 实测重跑一次就变成 16 行。
+        # ⚠️ dtype={"id": str} 是必须的，而且 astype(str) 顶不上它。
+        # `id` 是 '083' 这种带前导零的编号：不指定 dtype，pandas 读回来是整数 83，
+        # 而 str(83) == '83' != '083' —— 键仍然对不上，旧行被当成不同的行留下来。
+        # 实测 p2s.csv 就这样变成 16 行：同一批预测的两种口径并存，而且因为
+        # 「与掩码无关的列」两组逐位相同，看表的人不会察觉。
+        # （2026-08-28；本周同一个陷阱的第五次，前四次的「修复」都不够彻底。）
+        old = pd.read_csv(out, dtype={"id": str})
         KEY = ['run', 'id', 'k']
         k_old = old[KEY].astype(str).apply(tuple, axis=1)
         k_new = set(df[KEY].astype(str).apply(tuple, axis=1))
