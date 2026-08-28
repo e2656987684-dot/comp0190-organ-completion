@@ -192,8 +192,14 @@ def metrics_from_points(pred, gt, scale_mm, inp=None):
     return out
 
 
-def _defect_metrics(P, G, I, dist1, scale_mm):
+def _defect_metrics(P, G, I, dist1, scale_mm, gt_mask=None, defect_mm=None):
     """The same metrics, restricted to the region the input does not already show.
+
+    `gt_mask` / `defect_mm` exist ONLY so alternative region definitions can be
+    trialled through this exact code rather than a reimplementation that could
+    drift from it (see `defect_mask_switch.py`). Both default to None and the
+    default path is bit-for-bit what it always was -- verified by that script
+    against the frozen `eval_all_runs.csv`. Nothing in the project passes them.
 
     WHY: only 6.7% of ground-truth points lie in the defect -- the other 93.3% are
     surface the model was handed in the input and merely has to reproduce. The
@@ -248,8 +254,9 @@ def _defect_metrics(P, G, I, dist1, scale_mm):
     """
     from scipy.spatial import cKDTree
 
-    thr = DEFECT_MM / scale_mm                       # mm -> normalised
-    gt_mask = cKDTree(I).query(G, k=1, workers=-1)[0] > thr
+    thr = (DEFECT_MM if defect_mm is None else defect_mm) / scale_mm   # mm -> normalised
+    if gt_mask is None:
+        gt_mask = cKDTree(I).query(G, k=1, workers=-1)[0] > thr
 
     out = {"defect_gt_%": 100.0 * gt_mask.mean()}
     if not gt_mask.any():                            # no hole found: leave blank

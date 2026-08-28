@@ -18,6 +18,7 @@ PY=/root/miniconda3/envs/comp0190-msn/bin/python
 |---|---|---|---|---|---|
 | **`fold_text_branch.py`** | `$PY src/eval/fold_text_branch.py` | **只打印到终端** | ❌ 不写 | ✅ 建两个 187M 模型 | ~40 秒 |
 | **`attention_collapse.py`** | `$PY src/eval/attention_collapse.py`<br>（`--runs <run> ...` 指定，`--n` 改颅骨数） | 终端 + CSV | ✅ **合并写** `experiments_log/attention_collapse.csv` | ✅ 每套架构建一个 187M 模型 | 约 3~5 分钟（默认 3 个 run） |
+| **`defect_mask_switch.py`** | `$PY src/eval/defect_mask_switch.py`<br>⚠️ 试算脚本，**不改动任何现有数据** | 终端 + CSV | ✅ 写 `experiments_log/defect_mask_switch.csv` + 缓存 `defect_mask_labels.npz` | ✅ 4 套架构各建一个 187M 模型 | 约 20 分钟（首次含 20 颗标签 7 分钟） |
 | **`defect_mask_audit.py`** | `$PY src/eval/defect_mask_audit.py`<br>（`--self-test` 只跑合成几何） | 终端 + CSV | ✅ **合并写** `experiments_log/defect_mask.csv` | ❌ 纯 CPU（marching cubes 峰值 1~2GB） | 约 7 分钟（20 颗 × 5 次 marching cubes） |
 | **`point_to_surface.py`** | `$PY src/eval/point_to_surface.py`<br>（`--self-test` 只跑合成几何） | 终端 + CSV | ✅ **合并写** `experiments_log/p2s.csv` | ✅ 建一个 187M 模型（推理完就释放） | 约 3~5 分钟（8 颗） |
 | **`normal_quality.py`** | `$PY src/eval/normal_quality.py`<br>（`--self-test` 只跑合成对照，不碰数据） | 终端 + CSV | ✅ **合并写** `experiments_log/normal_quality.csv` | ❌ 纯 CPU（但 marching cubes 峰值 1~2GB/体数据） | 约 2~4 分钟（8 颗 × 2 个体数据） |
@@ -72,6 +73,8 @@ kernel 占着显存时这些脚本会 OOM。
 | `experiments_log/surface_quality.csv` | ✅ **必须** | `MSN_surface_quality.ipynb` 的 `MODELS`（⚠️ 存档 cell 是合并写，不会丢旧行） |
 | `experiments_log/pretrained_baseline/eval_val20_x5.csv` | ✅ **每折各一次** | `eval_pretrained_baseline.py --split-from <fold run> --out <per-fold csv>`。基线必须在**和它对比的模型同一批颅骨**上评 |
 | `experiments_log/attention_collapse.csv` | ✅ **每个最终模型各一次** | `attention_collapse.py --runs <各折的 run>`。坍缩是**一组权重**的性质，与划分无关，所以结论几乎不会变；但论文引的是最终模型那一份，得从那份读。⚠️ 三套以上架构一次跑会撞显存（TF 不归还显存），分几次跑即可 —— CSV 是合并写的 |
+| `experiments_log/defect_mask_switch.csv` | ❌ 不用 | **试算，不是结论**。除非真的换口径，否则无需重跑 |
+| `experiments_log/defect_mask_labels.npz` | ❌ **不用重跑** | 逐点 implant 真值标签，数据的性质。⭐ 若将来换口径，有它就**不需要在评测时读原始 nrrd** |
 | `experiments_log/defect_mask.csv` | ❌ **不用重跑** | 数据的性质，**全程无模型参与**，与划分/权重无关（同 `sampling_floor.csv`）。它审的是缺损区掩码的定义，不是某个模型 |
 | `experiments_log/p2s.csv` | ✅ **必须** | `point_to_surface.py --runs <最终模型>`。网格/GT 那一侧只依赖数据，预测那一侧依赖权重 |
 | `experiments_log/normal_quality.csv` | ❌ **不用重跑** | 只依赖 GT 数据与点数，**全程无模型参与**，与划分/权重无关（同 `sampling_floor.csv`）。它是 TODO 9 的闸门，不是结果 |
