@@ -39,7 +39,7 @@ COMP0190 硕士项目：**颅骨点云补全**（SkullFix，100 对，80 训 / 2
 | 顺序 | 文件 | 读多少 | 约 token |
 |---|---|---|---|
 | 1 | `TODO.md` **最后一节** | 全读（当前有效清单） | 3.8k |
-| 2 | `devlog.md` | **全读**（34 条日期条目，倒着读更快进入状态） | **60.3k** |
+| 2 | `devlog.md` | **全读**（46 条日期条目，倒着读更快进入状态）<br>⚠️ 先看文件头那条「devlog 里一切都是待定的」 | **~80k** |
 | 3 | `experiments_log/README.md` | 全读（有效性分界、噪声判据、采样地板、各 run 定性） | 7.6k |
 | 4 | `src/eval/README.md` | 全读（脚本怎么跑 + **k 折后要重跑什么**） | 2k |
 | 5 | `notebooks/README.md` | 全读（两个 notebook 的分工） | 1k |
@@ -57,7 +57,7 @@ devlog 只读**最近 8 条**。上面的「项目脉络」已经覆盖了更早
 ### 定位 devlog 的技巧（不用手工维护目录）
 
 ```bash
-grep -n "^## " devlog.md          # 34 条的日期 + 标题 + 行号，永远是最新的
+grep -n "^## " devlog.md          # 46 条的日期 + 标题 + 行号，永远是最新的
 grep -n "⭐\|⚠️" devlog.md | head -40   # 标了星号和警告的条目，重要性排序
 ```
 
@@ -71,6 +71,7 @@ grep -n "⭐\|⚠️" devlog.md | head -40   # 标了星号和警告的条目，
 cd /root/comp0190-organ-completion && /root/miniconda3/envs/comp0190-msn/bin/python -c "
 import pandas as pd
 df = pd.read_csv('experiments_log/eval_all_runs.csv')
+df = df[df.defect_def == 'implant']      # ⚠️ 排掉 5mm 旧口径的两行
 print(df.groupby('run', sort=False)[['CD_t_mm','defect_cov_mm','clump_%']].mean().round(3).to_string())"
 ```
 
@@ -165,8 +166,8 @@ print(df.groupby('run', sort=False)[['CD_t_mm','defect_cov_mm','clump_%']].mean(
 （只有权重已删的 `baseline` / `dcd_l2` 仍是 `5mm_legacy`，而它们本来就不进论文）。
 
 ⚠️ **`defect_prec_mm` 可以被糊弄**（不往洞里放点就好看），必须和 `defect_n_pred` 一起看。
-真实案例：预训练基线的缺损精度只比本工作差 1.06×，但它只往洞里放了 174 个点（GT 约 395）
-—— 它根本没填洞。
+真实案例：预训练基线的缺损精度只比本工作差 **1.13×**，但它只往洞里放了 **30 个点**
+（GT 真实缺损 380，本工作放 391）—— **它几乎一个点都没放进去**。
 
 **一个改动算"成立"，要同时满足四条**（详见 `MSN_compare_runs.ipynb` 第 3 节）：
 
