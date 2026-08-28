@@ -169,6 +169,23 @@ def analyse(repo, specs, n_skulls=20, device="/GPU:0"):
                         "6mm": dict(defect_mm=6.0),
                         "implant": dict(gt_mask=labels[sid], defect_mm=5.0),
                     }
+                    # Decompose the change instead of only showing it. The two
+                    # sets share their TP; what differs is 87 false positives
+                    # (intact bone, dropped) against 71 false negatives (implant
+                    # near the rim, added). BOTH are relatively easy points, so
+                    # which way the mean moves is not something to reason out --
+                    # it depends on their actual distances, which is what these
+                    # three numbers report.
+                    m5 = cKDTree(inputs[j]).query(gt[j], k=1, workers=-1)[0] * s_mm > 5.0
+                    mi = labels[sid]
+                    d_mm = dist1 * s_mm
+                    for tag, sel in (("TP", m5 & mi), ("FP_dropped", m5 & ~mi),
+                                     ("FN_added", ~m5 & mi)):
+                        rows.append({"run": run.label, "id": sid,
+                                     "definition": f"_part_{tag}",
+                                     "defect_cov_mm": float(d_mm[sel].mean()) if sel.any() else np.nan,
+                                     "defect_gt_%": 100.0 * sel.mean()})
+
                     got5 = None
                     for name, kw in variants.items():
                         m = rp._defect_metrics(pred, gt[j], inputs[j], dist1, s_mm, **kw)
@@ -204,7 +221,8 @@ def _paired(df, base, other, col="defect_cov_mm"):
 
 
 def report(df):
-    piv = df.pivot_table(index="run", columns="definition",
+    df = df[~df.definition.str.startswith("_part_")] if False else df
+    piv = df[~df.definition.str.startswith("_part_")].pivot_table(index="run", columns="definition",
                          values="defect_cov_mm", sort=False)[["5mm", "6mm", "implant"]]
     print(f"\n{'=' * 74}\n主指标 defect_cov_mm，三种定义并排\n{'=' * 74}")
     print(f"{'run':<18}{'5mm(现行)':>12}{'6mm':>10}{'implant':>11}"
@@ -220,9 +238,25 @@ def report(df):
     print(f"\n  ⭐ 排名变化：{moved}/{len(piv)} 个 run 换了位次 "
           f"{'✅ 全部不变，比较未受影响' if moved == 0 else '⚠️ 有变化，要细看'}")
 
+    parts = df[df.definition.str.startswith("_part_")]
+    if len(parts):
+        print(f"\n{'=' * 74}\n⭐ 变化从哪来：两个集合共享 TP，差别在这两批点\n{'=' * 74}")
+        print(f"  {'':16}{'点数/颅骨':>11}{'到最近预测点':>14}   说明")
+        for tag, note in (("TP", "两种定义都算，共有"),
+                          ("FP_dropped", "5mm 划进来但其实在完好骨上 —— implant 定义**剔除**"),
+                          ("FN_added", "真在 implant 上但离输入点近 —— implant 定义**加入**")):
+            g = parts[parts.definition == f"_part_{tag}"]
+            print(f"  {tag:16}{g['defect_gt_%'].mean()*6144/100:>11.0f}"
+                  f"{g.defect_cov_mm.mean():>13.3f}mm   {note}")
+        fp = parts[parts.definition == "_part_FP_dropped"].defect_cov_mm.mean()
+        fn = parts[parts.definition == "_part_FN_added"].defect_cov_mm.mean()
+        print(f"\n  剔除的那批平均 {fp:.3f}mm，加入的那批平均 {fn:.3f}mm —— "
+              f"{'剔除的更容易 → 主指标会升高' if fp < fn else '加入的更容易 → 主指标会降低'}")
+
     print(f"\n{'=' * 74}\n其余各列的平均变化（implant vs 5mm）\n{'=' * 74}")
+    main = df[~df.definition.str.startswith("_part_")]
     for c in DEFECT_COLS:
-        p = df.pivot_table(index="run", columns="definition", values=c, sort=False)
+        p = main.pivot_table(index="run", columns="definition", values=c, sort=False)
         a, b = p["5mm"].mean(), p["implant"].mean()
         pct = f"{100 * (b - a) / a:+6.1f}%" if a else "    n/a"
         print(f"  {c:<18}{a:>10.3f} → {b:>8.3f}   {b - a:>+8.3f}   {pct}")
@@ -234,7 +268,7 @@ def report(df):
     for label, base, other in claims:
         print(f"\n  {label}（{other} vs {base}）")
         for d in ("5mm", "6mm", "implant"):
-            sub = df[df.definition == d]
+            sub = main[main.definition == d]
             if not {base, other} <= set(sub.run):
                 continue
             mean, better, n, p = _paired(sub, base, other)
