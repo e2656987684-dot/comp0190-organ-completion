@@ -24,6 +24,9 @@ COMP0190 硕士项目：**颅骨点云补全**（SkullFix，100 对，80 训 / 2
 | **架构侧尝试** | 逐点交叉注意力 ❌（注意力从未启动）· `--no-text` ✅（现象成立）· Q/K 初始绑定 ❌（重复实验推翻） | 80 个样本学不出注意力选择性 |
 | **判读方法学** | 三把尺子分开、同轮次表、逐颅骨配对检验；发现"0.004mm 噪声底线"是撞大运 | 见下面「判读规矩」 |
 | **收尾（进行中）** | 仓库整理（19G→5.6G）· TODO ⚙️ 清空 · 折叠验证 · 基线重评 · 采样地板正式入库 | 剩下的见 TODO 最后一节 |
+| **临时脚本数字正式化** | 采样地板 · 注意力坍缩 · 粗糙度 —— **三个全部在正式测量后被更正**（不只是"不可复现"，是**真的错了**） | 不入库的数字可能一直是错的 |
+| **表示的能力边界** | 点到面指标（地板两法互验 2.310 vs 2.300）· 法向不可估（定向翻转≈50%）→ **Poisson 取消** | "离临床多远"是**分辨率**问题：6144 点 ≈4mm，AutoImplant 是 0.45mm 体素 |
+| **⭐ 缺损区换真值** | 数据集自带的 `implant/` 从没被用过；5mm 距离规则实测 precision 0.79 / recall 0.81 → **改用真值** | **数量对 ≠ 集合对**；三条结论全部存活且两条变强 |
 
 ---
 
@@ -139,14 +142,27 @@ print(df.groupby('run', sort=False)[['CD_t_mm','defect_cov_mm','clump_%']].mean(
 17. **CD_t 有两个口径，不要混引**：`run.json` 的 `best_val_cd_t_mm`（训练期、数据集平均 scale、
     全程最优）比 `report.py` 的逐颅骨口径系统性**低约 0.09mm**。**论文引 `eval_all_runs.csv`。**
 18. **编辑器会把移动过的文件写回老路径**（`git mv` 之后 VS Code 重存了一份旧版）。
+19. ⚠️⚠️ **读任何带 `id` 的 CSV 一律 `pd.read_csv(..., dtype={"id": str})`。**
+    颅骨编号带前导零（`'083'`），不指定就被读成整数 `83`，而 **`str(83)` 是 `'83'` 不是 `'083'`
+    ——`astype(str)` 顶不上它**。以 id 为键的合并会**静默落空**，重跑一次数据就变成两份。
+    **本周同一个陷阱出现五次**，最险的一次两组行「与掩码无关的列」逐位相同，看表的人根本
+    察觉不到有两份数据。**根上的修法是让它从来不变成整数，而不是事后补救。**
+20. **`Run.label` 取自目录名，可能与 CSV 里的历史标签不同**（`lr_fix_only` vs `lr_fix`）。
+    以 run 名为键的合并同样会静默落空 —— `recompute_eval_all.py` 因此加了
+    `EXPECTED_LEGACY` 白名单，任何本该被重算却留在旧口径的 run 都直接中止。
 
 ---
 
 ## 五、判读规矩
 
-**主指标是 `defect_cov_mm`（缺损区覆盖）。** 只有约 6.4% 的 GT 点在缺损区，其余是输入里
+**主指标是 `defect_cov_mm`（缺损区覆盖）。** 只有约 6.2% 的 GT 点在缺损区，其余是输入里
 已给、模型只需复现的表面 —— 全点云指标主要在量"抄得像不像"。实测佐证：2×2 消融在缺损
 覆盖上四格**全部显著**，在全点云 CD_t 上**全部不显著**。
+
+⚠️ **缺损区自 2026-08-28 起由数据集自带的植入物真值定义**（`experiments_log/defect_mask_labels.npz`，
+由 `make_defect_labels.py` 生成），**不再是距离规则**。`report.DEFECT_MM = 5.0` 只剩**预测侧**的容差。
+**⛔ 换口径前后的 `defect_*` 数字不可混引** —— `eval_all_runs.csv` 有 `defect_def` 列标明每行的口径
+（只有权重已删的 `baseline` / `dcd_l2` 仍是 `5mm_legacy`，而它们本来就不进论文）。
 
 ⚠️ **`defect_prec_mm` 可以被糊弄**（不往洞里放点就好看），必须和 `defect_n_pred` 一起看。
 真实案例：预训练基线的缺损精度只比本工作差 1.06×，但它只往洞里放了 174 个点（GT 约 395）
@@ -235,6 +251,12 @@ src/eval/report.py               Run / eval_runs / epoch_matched / paired_stats 
 src/eval/mesh_viz.py             mesh 重建 + surface_stats（⚠️ 重建只能看，不能算指标）
 src/eval/fold_text_branch.py     文本分支折叠验证（证明它等于 4 个偏置向量）
 src/eval/sampling_floor.py       采样地板（k 折后不用重跑）
+src/eval/make_defect_labels.py   ⭐ 缺损区真值标签（100 颗已生成入 git，k 折不用重跑）
+src/eval/defect_mask_audit.py    审计 5mm 规则 vs implant 真值（打标签的唯一来源 label_one）
+src/eval/recompute_eval_all.py   换口径后重算主表（带「与掩码无关的列必须不变」的断言）
+src/eval/point_to_surface.py     点到面指标（地板互验；⚠️ signed_deviation 已判过时）
+src/eval/normal_quality.py       法向可估性闸门（⛔ 不通过 → Poisson 取消）
+src/eval/roughness.py            粗糙度（⚠️ 旧值 0.736/0.760 符号是反的，已作废）
 src/eval/eval_pretrained_baseline.py  预训练基线重评（k 折后每折各跑一次）
 notebooks/MSN_train_skullfix.ipynb    发起训练（只改第 1 节控制面板）
 notebooks/MSN_compare_runs.ipynb      判读结果（指标词典、判决标准都在里面）
