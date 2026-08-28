@@ -103,11 +103,12 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__fi
 # after-the-fact surface-quality numbers mean the same thing.
 CLUMP_MM = 2.0
 
-# Kept equal to eval.report.DEFECT_MM. A ground-truth point counts as being in the
-# defect when the nearest point of the DEFECTIVE INPUT is further away than this;
-# 5 mm sits in the valley of that distance's bimodal distribution. Same definition
-# as the reported metric, so the per-epoch diagnostic below is directly comparable
-# with the defect_cov_mm column of experiments_log/eval_all_runs.csv.
+# ⚠️ NO LONGER DEFINES THE DEFECT REGION (2026-08-28). That is now the implant
+# ground truth the dataset ships, read from experiments_log/defect_mask_labels.npz
+# by `make_defect_callback` below, so the per-epoch diagnostic stays directly
+# comparable with the defect_cov_mm column of eval_all_runs.csv -- which is the
+# only reason that column is worth logging. Kept here because it is still
+# `eval.report.DEFECT_MM`'s value and the two must not drift apart.
 DEFECT_MM = 5.0
 
 
@@ -399,7 +400,8 @@ def _nn_dist(query, ref, chunk=1024):
     return out
 
 
-def make_defect_callback(keras, x_val, gt_val, inputs_val, scales_val, every):
+def make_defect_callback(keras, x_val, gt_val, inputs_val, scales_val, every,
+                         val_ids=None, repo=None):
     """Log validation defect-region coverage every `every` epochs. DIAGNOSTIC ONLY.
 
     WHY THIS EXISTS. Every decision during training watches `val_loss`: when to
@@ -415,14 +417,33 @@ def make_defect_callback(keras, x_val, gt_val, inputs_val, scales_val, every):
     different, merely correlated quantity -- and reporting defect coverage is the
     clean arrangement. This callback only writes a column.
 
-    The mask is the same one `eval.report._defect_metrics` uses (ground-truth
-    points whose nearest INPUT point is further than DEFECT_MM), and distances are
-    converted with each skull's own scale, so the logged value is directly
-    comparable with the defect_cov_mm column of eval_all_runs.csv.
+    THE MASK IS THE SAME ONE report._defect_metrics USES, and staying that way is
+    the whole point of the column -- it is only worth logging if it is directly
+    comparable with `defect_cov_mm` in eval_all_runs.csv. Since 2026-08-28 that
+    means the implant ground truth the dataset ships, read from the labels file,
+    NOT the old "nearest input point further than DEFECT_MM" rule (audited at
+    precision 0.79 / recall 0.81 against the implant; see devlog 2026-08-27).
+
+    ⚠️ Missing labels are a hard error, not a silent fall back to the old rule:
+    a run whose logged column quietly used a different region from the one the
+    thesis reports would be worse than no column at all. No run has ever recorded
+    this column yet (`--defect-every` landed 2026-08-25 and nothing has trained
+    since), so there is no back-compatibility to preserve.
     """
-    masks = []
-    for gt, inp, s in zip(gt_val, inputs_val, scales_val):
-        masks.append(_nn_dist(gt.astype(np.float64), inp.astype(np.float64)) > DEFECT_MM / s)
+    if val_ids is None or repo is None:
+        raise ValueError("make_defect_callback 需要 val_ids 与 repo 才能读缺损区真值标签")
+    labels_path = os.path.join(repo, "experiments_log", "defect_mask_labels.npz")
+    if not os.path.exists(labels_path):
+        raise SystemExit(
+            f"缺损区真值标签不存在：{labels_path}\n"
+            f"先跑：python src/eval/make_defect_labels.py\n"
+            f"（或用 --defect-every 0 关掉这个诊断列）")
+    store = np.load(labels_path)
+    missing = [s for s in val_ids if s not in store]
+    if missing:
+        raise SystemExit(f"缺少这些颅骨的缺损区真值标签 {missing}\n"
+                         f"先跑：python src/eval/make_defect_labels.py")
+    masks = [store[sid] for sid in val_ids]
 
     class _Defect(keras.callbacks.Callback):
         def on_epoch_end(self, epoch, logs=None):
@@ -651,7 +672,8 @@ def main():
         # value into `logs` for CSVLogger to pick up.
         callbacks.append(make_defect_callback(
             tf.keras, x_val, gt[val_idx], inputs[val_idx],
-            [float(v) for v in data["scale_mm"][val_idx]], args.defect_every))
+            [float(v) for v in data["scale_mm"][val_idx]], args.defect_every,
+            val_ids=[str(v) for v in data["ids"][val_idx]], repo=REPO_ROOT))
     callbacks.append(tf.keras.callbacks.CSVLogger(os.path.join(out_dir, "history.csv")))
     if args.early_stop_patience > 0:
         # A run previously stopped purely because --minutes ran out, one epoch

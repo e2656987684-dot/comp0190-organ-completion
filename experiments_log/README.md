@@ -1,5 +1,18 @@
 # 实验记录 (experiments_log)
 
+> ⚠️⚠️ **缺损区口径变更（2026-08-28）—— 读任何 `defect_*` 数字之前先看这条**
+>
+> 缺损区**不再**由距离规则推定（旧："GT 点到最近输入点 > 5mm"），改为
+> **数据集自带的植入物真值**（`defect_mask_labels.npz`）。
+> `report.DEFECT_MM = 5.0` 仅剩**预测侧**的容差，未变。
+>
+> **⛔ 换口径前后的 `defect_*` 数字不可混引。** 本文件里凡是标了
+> 「旧口径」的表格都是 5mm 时代的，保留作历史记录；
+> 论文只引重算之后的那一套（见下方「缺损区口径变更」一节）。
+>
+> 不受影响的列：`CD_t` `HD95` `F1@*` `DCD` `clump_%` `spacing_CV`，
+> 以及 `sampling_floor` / `attention_collapse` / `roughness` / `normal_quality`。
+
 `experiments/` 整个目录在 `.gitignore` 里（单个 `.h5` 权重 750 MB，不该进 git）。
 但 `run.json`（超参 + 划分 + 最终指标）和 `history.csv`（逐 epoch 曲线）都很小，
 值得跟代码一起进版本控制 —— 权重丢了还能重训，实验记录丢了就没法复现对比表了。

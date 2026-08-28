@@ -37,14 +37,43 @@ C_SERIES = ["#1565C0", "#E64A19", "#6A1B9A", "#00838F", "#EF6C00", "#37474F"]
 # reports (Table 1/2), so keeping them makes our numbers directly comparable.
 F1_THRESHOLDS = (0.05, 0.03)
 
-# A ground-truth point counts as "in the defect" when the nearest point of the
-# DEFECTIVE INPUT is further away than this, in millimetres. 5 mm sits well clear
-# of the sampling spacing -- measured GT-to-input nearest distance is 2.75 mm at
-# the median (shared surface) against 20.1 mm at p99 (the hole) -- and puts 6.7%
-# of ground-truth points inside the defect, range 4.5-9.3% across the validation
-# skulls. Raising it shrinks the region and makes the metric noisier; lowering it
-# starts admitting shared surface.
+# ⚠️ SINCE 2026-08-28 THIS IS THE PREDICTION-SIDE TOLERANCE ONLY.
+#
+# The ground-truth side no longer needs a threshold: the defect region is the
+# implant the dataset ships, read from DEFECT_LABELS. The distance rule that used
+# to define it ("nearest input point further than 5 mm") was audited against that
+# implant and found to have precision 0.79 / recall 0.81 -- the COUNT was nearly
+# right (6.44% of ground-truth points against a true 6.18%) while the SET was
+# about a third wrong, 87 false positives per skull very nearly cancelling 71
+# false negatives. Both errors biased the metric the same way, optimistically:
+# the false positives sit on intact bone the model can copy, and the false
+# negatives are the hardest real points.
+#
+# This constant survives because the PREDICTION side still needs a tolerance --
+# a predicted point is an arbitrary point in space, so "is it on the implant" is
+# not a well-posed question and it is scored by proximity to the defect ground
+# truth instead. Kept at 5 mm, unchanged, so that side did not move.
 DEFECT_MM = 5.0
+
+# Per-point implant ground truth, written by src/eval/make_defect_labels.py.
+# A file rather than a computation: deriving it needs marching cubes over three
+# raw volumes per skull (~20 s), and `data/` is gitignored on a machine whose
+# /root is wiped by redeploys -- the labels are tracked, so evaluation survives
+# losing the raw data.
+DEFECT_LABELS = os.path.join("experiments_log", "defect_mask_labels.npz")
+_LABEL_CACHE = {}
+
+
+def defect_labels(repo):
+    """{skull id -> bool[6144]}, True where that point is on the implant."""
+    path = os.path.join(repo, DEFECT_LABELS)
+    if path not in _LABEL_CACHE:
+        if not os.path.exists(path):
+            raise FileNotFoundError(
+                f"{DEFECT_LABELS} 不存在 —— 缺损区真值标签还没生成。\n"
+                f"先跑：python src/eval/make_defect_labels.py")
+        _LABEL_CACHE[path] = {k: v for k, v in np.load(path).items()}
+    return _LABEL_CACHE[path]
 
 # The one place the cache filename is written down. It was repeated verbatim in
 # four files, which is fine right up until it isn't: nothing enforces that they
@@ -151,7 +180,7 @@ def _dcd_numpy(dist1, dist2, idx1, idx2, n_pred, n_gt, alpha=1.0, n_lambda=1.0):
                  + np.mean(1.0 - np.exp(-dist2 * alpha) * w2))
 
 
-def metrics_from_points(pred, gt, scale_mm, inp=None):
+def metrics_from_points(pred, gt, scale_mm, inp=None, defect_mask=None):
     """Every point-cloud metric, from ONE pair of nearest-neighbour lookups.
 
     Deliberately numpy + cKDTree rather than the TensorFlow versions in
@@ -188,18 +217,18 @@ def metrics_from_points(pred, gt, scale_mm, inp=None):
 
     if inp is not None:
         out.update(_defect_metrics(P, G, np.asarray(inp, dtype=np.float64),
-                                   dist1, scale_mm))
+                                   dist1, scale_mm, gt_mask=defect_mask))
     return out
 
 
 def _defect_metrics(P, G, I, dist1, scale_mm, gt_mask=None, defect_mm=None):
     """The same metrics, restricted to the region the input does not already show.
 
-    `gt_mask` / `defect_mm` exist ONLY so alternative region definitions can be
-    trialled through this exact code rather than a reimplementation that could
-    drift from it (see `defect_mask_switch.py`). Both default to None and the
-    default path is bit-for-bit what it always was -- verified by that script
-    against the frozen `eval_all_runs.csv`. Nothing in the project passes them.
+    ⚠️ `gt_mask` IS NOW THE NORMAL WAY TO CALL THIS (2026-08-28). `eval_runs` and
+    `eval_pretrained_baseline` pass the implant ground truth from
+    `defect_labels()`. Leaving it None falls back to the old distance rule, which
+    is kept only so the two can still be compared (`defect_mask_switch.py`) --
+    do not report numbers from the fallback path beside numbers from the labels.
 
     WHY: only 6.7% of ground-truth points lie in the defect -- the other 93.3% are
     surface the model was handed in the input and merely has to reproduce. The
@@ -210,16 +239,18 @@ def _defect_metrics(P, G, I, dist1, scale_mm, gt_mask=None, defect_mm=None):
 
     THE TWO MASKS ARE DIFFERENT, ON PURPOSE.
 
-      ground truth : a GT point is in the defect if the nearest INPUT point is
-                     more than DEFECT_MM away. The GT->input distance is cleanly
-                     bimodal (peak at 2-3 mm for shared surface, valley at 5-6 mm,
-                     second peak past 15 mm), and DEFECT_MM = 5 sits in the
-                     valley: it selects 6.7% of GT points, against 42% at a 3 mm
-                     cut and 4.2% at 8 mm, i.e. the count is flat once past the
-                     valley. The scale that sets this is the sampling spacing --
-                     4.03 mm between GT points, 4.96 mm between input points --
-                     since two independent samplings of one surface land about
-                     half a spacing apart.
+      ground truth : ⭐ GROUND TRUTH, not a rule. A GT point is in the defect if
+                     it sits on the implant the dataset ships -- `gt_mask`, from
+                     `defect_labels()`. Selects 6.18% of GT points (against the
+                     old rule's 6.44%). The rule it replaced scored precision
+                     0.79 / recall 0.81 against this, and its two error types
+                     nearly cancelled in COUNT while leaving the SET a third
+                     wrong; see devlog 2026-08-27/28. One error source the rule
+                     could not have fixed at any threshold: the defective volume
+                     has a freshly cut face that the complete skull does not, so
+                     0.3-0.9% of input points sit on a surface that does not
+                     exist in the ground truth, and a real defect point next to
+                     one of those reads as "input covers this".
 
       prediction   : a predicted point is in the defect if it is within DEFECT_MM
                      of a defect GT point. The same "far from input" rule does
@@ -359,6 +390,10 @@ def eval_runs(repo, runs, n_skulls=None, device="/GPU:0", data=None):
               + ", ".join(f"{k[0]}{'+pp_attn' if k[1] else ''} x{len(v)}"
                           for k, v in groups.items()))
 
+    # Implant ground truth for the defect region. Loaded up front so a missing
+    # skull fails before any GPU work rather than 15 minutes into it.
+    labels = defect_labels(repo)
+
     rows = []
     with tf.device(device):
         for arch, group in groups.items():
@@ -371,6 +406,11 @@ def eval_runs(repo, runs, n_skulls=None, device="/GPU:0", data=None):
             for run in group:
                 model.load_weights(run.weights)
                 val = run.meta["val_ids"][:n_skulls] if n_skulls else run.meta["val_ids"]
+                missing = [s for s in val if s not in labels]
+                if missing:
+                    raise SystemExit(
+                        f"{run.label}: 缺少这些颅骨的缺损区真值标签 {missing}\n"
+                        f"先跑：python src/eval/make_defect_labels.py")
                 pos = [int(np.where(ids == sid)[0][0]) for sid in val]
                 # model.predict, NOT model(x) in a loop. Measured: calling the model
                 # directly on one sample at a time leaks 0.29 GiB per call and never
@@ -384,7 +424,8 @@ def eval_runs(repo, runs, n_skulls=None, device="/GPU:0", data=None):
                 for sid, i, p in zip(val, pos, preds):
                     s = float(scales[i])
                     row = {"run": run.label, "id": sid}
-                    row.update(metrics_from_points(p, gt[i], s, inp=inputs[i]))
+                    row.update(metrics_from_points(p, gt[i], s, inp=inputs[i],
+                                                   defect_mask=labels[sid]))
                     st = mv.surface_stats(p, gt[i], s)
                     row["clump_%"] = st["clump_pct"]
                     row["spacing_CV"] = st["spacing_cv"]

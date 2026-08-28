@@ -91,6 +91,44 @@ def label_by_implant(gt_mm, mesh_implant, mesh_defective):
     return d_i < d_d, d_i, d_d, np.minimum(d_i, d_d)
 
 
+def label_one(repo, sid, raw_root, gt_pts, scale_mm):
+    """The per-skull labelling, in one place because three scripts need it.
+
+    Returns a length-6144 bool array: True where that ground-truth point sits on
+    the implant rather than on the bone that was left. Every guard the audit
+    relies on runs here too -- the pipeline must reproduce the cache, the dataset
+    must actually satisfy `defective + implant == complete`, and every point must
+    land on one of the two surfaces -- because a wrong label here would silently
+    become a wrong defect region everywhere downstream.
+    """
+    import normal_quality as nq
+
+    pts_n, _, scale, _ = nq.truth_for(sid, raw_root)
+    if abs(scale - scale_mm) > 1e-3 or np.abs(pts_n - gt_pts).max() > 1e-5:
+        raise SystemExit(f"{sid}: 管线复现失败，坐标系没对上，已中止")
+    seed = nq._task_seed(sid, raw_root)
+    dense_def, _, _ = nq._dense_with_faces(
+        os.path.join(raw_root, "defective_skull", f"{sid}.nrrd"), 16384, 0.5, seed * 2 + 1)
+    centroid = dense_def.mean(axis=0)
+
+    mesh_i, vol_i = _mesh_mm(os.path.join(raw_root, "implant", f"{sid}.nrrd"))
+    mesh_d, vol_d = _mesh_mm(os.path.join(raw_root, "defective_skull", f"{sid}.nrrd"))
+    _, vol_c = _mesh_mm(os.path.join(raw_root, "complete_skull", f"{sid}.nrrd"))
+    if not np.array_equal((vol_d > 0) | (vol_i > 0), vol_c > 0) or ((vol_i > 0) & (vol_d > 0)).any():
+        raise SystemExit(f"{sid}: defective + implant != complete，真值前提不成立，已中止")
+    for m in (mesh_i, mesh_d):
+        m.vertices = (np.asarray(m.vertices) - centroid) / scale * scale_mm
+
+    is_imp, d_i, d_d, d_min = label_by_implant(gt_pts * scale_mm, mesh_i, mesh_d)
+    off = float((d_min > ON_SURFACE_MM).mean())
+    if off > 0.02:
+        raise SystemExit(f"{sid}: {100*off:.1f}% 的 GT 点离两张表面都太远，并集不变量不成立，已中止")
+    return is_imp, {"seam_pct": 100.0 * float(((d_i < ON_SURFACE_MM) & (d_d < ON_SURFACE_MM)).mean()),
+                    "off_surface_pct": 100.0 * off,
+                    "watertight": bool(mesh_i.is_watertight),
+                    "winding_consistent": bool(mesh_i.is_winding_consistent)}
+
+
 def analyse(repo, sids, raw_root):
     import normal_quality as nq
 

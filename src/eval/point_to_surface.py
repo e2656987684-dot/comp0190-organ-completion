@@ -39,7 +39,8 @@ RELATIONSHIP TO `mesh_viz.signed_deviation` -- READ BEFORE DROPPING EITHER
   but against a plane fitted to the 24 nearest ground-truth points. That plane is
   contaminated: `roughness.py` measured the k=24 neighbourhood spreading 8.72 mm
   along its own normal while the skull's shell is 5-7 mm thick, so the "local
-  plane" is fitted across BOTH sheets and sits somewhere between them. The
+  plane" is fitted across BOTH sheets and sits somewhere between them.
+
   So this script computes BOTH, on the same predicted points in the same run,
   and prints them side by side. That is not a convenience -- doing it across CSVs
   instead was tried and was wrong: `surface_quality.csv` uses "the first 8
@@ -205,6 +206,7 @@ def analyse(repo, specs, n_skulls=8, n_dense=N_DENSE, device="/GPU:0"):
     import report as rp
 
     runs = rp.load_runs(repo, specs)
+    labels = rp.defect_labels(repo)
     data = np.load(os.path.join(repo, rp.DATA_CACHE))
     ids, inputs, gt, scales = data["ids"], data["inputs"], data["gt"], data["scale_mm"]
     text_path = os.path.join(repo, "data", "cache", "bert_skull.npy")
@@ -236,7 +238,7 @@ def analyse(repo, specs, n_skulls=8, n_dense=N_DENSE, device="/GPU:0"):
         print(f"\n{label}:")
         for sid, j, pred in zip(val, pos, pr):
             s_mm = float(scales[j])
-            mesh = _mesh_for(sid, raw_root, nq, trimesh, gt[j], s_mm)
+            mesh, mesh_i = _mesh_for(sid, raw_root, nq, trimesh, gt[j], s_mm)
             vtree = cKDTree(np.asarray(mesh.vertices))
 
             # ---- invariant: GT points were sampled off this mesh -> distance 0 ----
@@ -277,10 +279,19 @@ def analyse(repo, specs, n_skulls=8, n_dense=N_DENSE, device="/GPU:0"):
             s2p = cKDTree(pred).query(dense_n, k=1, workers=-1)[0] * s_mm
             floor = cKDTree(gt[j]).query(dense_n, k=1, workers=-1)[0] * s_mm
 
-            # ---- defect masks: the same two rules report.py already uses ----
-            d_in_gt = cKDTree(inputs[j]).query(gt[j], k=1, workers=-1)[0] * s_mm
-            defect_gt = gt[j][d_in_gt > DEFECT_MM]
-            m_dense = cKDTree(inputs[j]).query(dense_n, k=1, workers=-1)[0] * s_mm > DEFECT_MM
+            # ---- defect region: the implant ground truth, same as report.py ----
+            # (2026-08-28; the distance rule this replaced scored precision 0.79 /
+            # recall 0.81 against it.)
+            defect_gt = gt[j][labels[sid]]
+            # The dense surface points need labelling too, and running the exact
+            # point-to-mesh query on 200k of them would cost ~3 min a skull. They
+            # lie ON the complete surface, and the complete surface is the union
+            # of the implant's and the remaining bone's, so "is this point on the
+            # implant" is answered by its distance to a dense sampling OF the
+            # implant: at 200k samples over ~13,000 mm^2 those sit ~0.26 mm apart,
+            # so a 0.5 mm cut separates the two sides to within a sample spacing.
+            imp_pts = np.asarray(trimesh.sample.sample_surface(mesh_i, n_dense, seed=11)[0])
+            m_dense = cKDTree(imp_pts / s_mm).query(dense_n, k=1, workers=-1)[0] * s_mm < 0.5
             m_pred = cKDTree(defect_gt).query(pred, k=1, workers=-1)[0] * s_mm < DEFECT_MM
 
             rows.append({
@@ -335,7 +346,11 @@ def _mesh_for(sid, raw_root, nq, trimesh, gt_pts, s_mm):
     scale = float(np.max(np.linalg.norm(dense_d - centroid, axis=1)))
     # cache frame is (x - centroid)/scale; work in mm = that * s_mm, and s_mm == scale
     mesh_c.vertices = (np.asarray(mesh_c.vertices) - centroid) / scale * s_mm
-    return mesh_c
+    # The implant's own surface, same frame -- needed to label the dense samples.
+    import defect_mask_audit as dma
+    mesh_i, _ = dma._mesh_mm(os.path.join(raw_root, "implant", f"{sid}.nrrd"))
+    mesh_i.vertices = (np.asarray(mesh_i.vertices) - centroid) / scale * s_mm
+    return mesh_c, mesh_i
 
 
 def report(df):

@@ -124,6 +124,15 @@ def main():
          np.tile(enc["input_ids"].numpy(), (n, 1)),
          np.tile(enc["attention_mask"].numpy(), (n, 1))]
 
+    # Implant ground truth for the defect region (2026-08-28: the region is no
+    # longer a distance rule). Loaded before the loop so a missing skull fails
+    # immediately rather than after the first inference pass.
+    labels = rp.defect_labels(REPO)
+    missing = [s for s in val if s not in labels]
+    if missing:
+        raise SystemExit(f"缺少这些颅骨的缺损区真值标签 {missing}\n"
+                         f"先跑：python src/eval/make_defect_labels.py")
+
     rows = []
     for draw in range(args.draws):
         # predict(), not model(x) in a loop: the latter leaks 0.29 GiB per call
@@ -131,7 +140,8 @@ def main():
         preds = AE.model.predict(x, batch_size=1, verbose=0)
         for sid, i, p in zip(val, pos, preds):
             row = {"draw": draw, "id": sid}
-            row.update(rp.metrics_from_points(p, gt[i], float(scales[i]), inp=inputs[i]))
+            row.update(rp.metrics_from_points(p, gt[i], float(scales[i]), inp=inputs[i],
+                                              defect_mask=labels[sid]))
             rows.append(row)
         print(f"  draw {draw + 1}/{args.draws}: {n} skulls")
 
