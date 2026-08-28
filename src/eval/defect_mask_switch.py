@@ -136,6 +136,13 @@ def analyse(repo, specs, n_skulls=20, device="/GPU:0"):
     text_path = os.path.join(repo, "data", "cache", "bert_skull.npy")
     text = np.load(text_path) if os.path.exists(text_path) else None
 
+    # Every run must share the split, because the frozen-CSV check and every
+    # comparison below assume the same skulls. They do (one split across all 16
+    # runs, checked 2026-08-27), but assuming it silently is how the cohort trap
+    # that bit `point_to_surface.py` happened.
+    splits = {tuple(r.meta["val_ids"]) for r in runs}
+    if len(splits) != 1:
+        raise SystemExit(f"这些 run 的验证集划分不止一种（{len(splits)} 种），无法并排比较")
     sids = runs[0].meta["val_ids"][:n_skulls]
     labels = implant_labels(repo, sids, raw_root)
 
@@ -146,7 +153,7 @@ def analyse(repo, specs, n_skulls=20, device="/GPU:0"):
     for r in runs:
         groups.setdefault(r.arch_key, []).append(r)
 
-    rows, n_checked = [], 0
+    rows, n_checked, unmatched = [], 0, []
     with tf.device(device):
         for arch, group in groups.items():
             cfg = rp.arch_config(msn, arch)
@@ -193,9 +200,16 @@ def analyse(repo, specs, n_skulls=20, device="/GPU:0"):
                         if name == "5mm":
                             got5 = m
 
-                    # ⭐ the check everything else depends on
+                    # ⭐ the check everything else depends on.
+                    # ⚠️ A run whose label is not in the frozen CSV used to be
+                    # skipped in silence -- `lr_fix_only` is stored there under
+                    # the label `lr_fix`, so 20 of 200 combinations went
+                    # unchecked while the script still reported a pass. Missing
+                    # rows are now counted and reported at the end.
                     ref = frozen[(frozen.run == run.label) & (frozen.id == sid)]
-                    if len(ref) == 1:
+                    if len(ref) != 1:
+                        unmatched.append((run.label, sid))
+                    else:
                         got = got5
                         for c in DEFECT_COLS:
                             a, b = float(ref.iloc[0][c]), float(got[c])
@@ -207,7 +221,12 @@ def analyse(repo, specs, n_skulls=20, device="/GPU:0"):
                 print(f"  {run.label} ✓")
             del model
             tf.keras.backend.clear_session()
-    print(f"\n⭐ 5mm 口径与 eval_all_runs.csv 逐颅骨逐列核对：{n_checked} 组全部一致 ✅")
+    total = len(runs) * len(sids)
+    print(f"\n⭐ 5mm 口径与 eval_all_runs.csv 逐颅骨逐列核对：{n_checked}/{total} 组一致 ✅")
+    if unmatched:
+        miss = sorted({r for r, _ in unmatched})
+        print(f"⚠️ 另有 {len(unmatched)} 组在冻结 CSV 里找不到对应行，**未被核对**：{miss}\n"
+              f"   （通常是 run 目录名与 CSV 里的标签不同，例如 lr_fix_only vs lr_fix）")
     return pd.DataFrame(rows)
 
 
