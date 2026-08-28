@@ -54,6 +54,15 @@ INVARIANT = ["DCD", "CD_t_mm", "HD95_mm", "F1@0.05", "precision", "recall",
 DEFECT = ["defect_gt_%", "defect_cov_mm", "defect_HD95_mm", "defect_n_pred",
           "defect_prec_mm", "defect_F1@0.05"]
 
+# ⚠️ The only rows allowed to stay under the old definition. Anything else left
+# behind means a run was not matched and its stale rows survived beside the fresh
+# ones -- which is exactly what happened on the first run of this script:
+# eval_all_runs.csv labels lr_fix_only as `lr_fix`, `Run.label` takes the
+# directory name, so the two never matched and the same experiment ended up in
+# the file twice, under two names AND two definitions. Silent, and invisible to a
+# duplicate-(run, id) check because the run names genuinely differ.
+EXPECTED_LEGACY = {"baseline", "dcd_l2"}
+
 DEFAULT_RUNS = ["msn_skullfix/lr_fix_only", "msn_skullfix/rep_w05",
                 "msn_skullfix/cd_only", "msn_skullfix/cd_rep05_full",
                 "msn_skullfix/cd_rep05_r2", "msn_skullfix/tie_qk",
@@ -116,6 +125,13 @@ def main():
     print(f"\n{len(merged)} 行 -> {args.out}")
     print(merged.groupby("defect_def").run.nunique().to_string())
     legacy = sorted(merged[merged.defect_def == "5mm_legacy"].run.unique())
+    unexpected = set(legacy) - EXPECTED_LEGACY
+    if unexpected:
+        raise SystemExit(
+            f"⛔ 这些 run 本该被重算，却留在了旧口径：{sorted(unexpected)}\n"
+            f"   多半是 CSV 里的标签和 run 目录名不同（如 lr_fix vs lr_fix_only），\n"
+            f"   于是旧行没被替换、和新行并存于同一文件。请核对名字后重跑。\n"
+            f"   （本次写出的文件已经是合并后的结果，需要先修掉陈旧行。）")
     if legacy:
         print(f"⚠️ 仍为旧口径（权重已删、再也算不出来）：{legacy}"
               f"\n   它们是 ⛔ 错误性实验、不进论文，所以不会有数字混引；"
