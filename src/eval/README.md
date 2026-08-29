@@ -57,7 +57,7 @@ kernel 占着显存时这些脚本会 OOM。
 
 | 模块 | 做什么 |
 |---|---|
-| `report.py` | ⚠️ `DEFECT_MM` 现在**只管预测侧**；缺损区 GT 侧走 `defect_labels()` 读真值标签。<br>`Run` / `load_runs` / `eval_runs`（逐颅骨指标）/ `epoch_matched`（同轮次）/ `paired_stats`（配对检验）/ 各种 `fig_*` |
+| `report.py` | ⚠️ `DEFECT_MM` 现在**只管预测侧**；缺损区 GT 侧走 `defect_labels()` 读真值标签。<br>`Run` / `load_runs` / `eval_runs`（逐颅骨指标）/ `epoch_matched`（同轮次）/ `paired_stats`（单折逐颅骨配对）/ 各种 `fig_*`<br>**k 折专用**：`fold_frame`（贴 config/fold + 前置条件全部 raise）/ `fold_summary`（折均值 ± std）/ `fold_paired` + `format_fold_paired`（折间配对，`paired_stats` 的 k 折替代品）|
 | `mesh_viz.py` | ⛔ **其 `signed_deviation` / `dev_*` 已于 2026-08-27 判定过时，停止引用**（高估 1.64×，且对表面偏移结构性失明——拟合平面落在骨壳正中，`outside_pct` 恒 ≈50%）。改用 `point_to_surface.py` 的 `p2s_*`。代码保留，理由见其 docstring。<br>点云 → mesh 重建、`surface_stats`（扎堆率/间距 CV/有符号偏差/**粗糙度**）、`local_roughness`（⚠️ 读它的 docstring：这个度量被骨壳厚度污染，只有 GT-vs-pred 的**差值**有意义）、诊断图 |
 
 ⚠️ 改完这两个模块，notebook 里要 `importlib.reload(rp)` 或重启 kernel，否则拿到的是缓存的旧模块。
@@ -81,7 +81,7 @@ kernel 占着显存时这些脚本会 OOM。
 | 产物 | k 折后 | 输入口 / 怎么重跑 |
 |---|---|---|
 | `experiments_log/sampling_floor.csv` | ❌ **不用重跑** | 只依赖数据和点数，与划分/权重无关。这是唯一一个 fold-independent 的量，所以它默认跑全部 100 颗而不是某一折的 20 颗 |
-| `experiments_log/eval_all_runs.csv` | ✅ **必须** | `report.eval_runs(REPO, runs)` —— 把折的 run 传进去即可 |
+| `experiments_log/eval_all_runs.csv` | ✅ **必须** | `report.eval_runs(REPO, runs)` —— 把折的 run 传进去即可。归档走 `MSN_compare_runs.ipynb` 第 6.1 节（合并写，`SAVE=False` 先看清单）。⚠️ **`eval_runs` 不产出 `defect_def`**，写入前必须补 `"implant"`；⚠️ **run 标签必须等于目录名**，否则合并静默落空（第 1 节有断言） |
 | `experiments_log/surface_quality.csv` | ✅ **必须** | `MSN_surface_quality.ipynb` 的 `MODELS`（⚠️ 存档 cell 是合并写，不会丢旧行） |
 | `experiments_log/pretrained_baseline/eval_val20_x5.csv` | ✅ **每折各一次** | `eval_pretrained_baseline.py --split-from <fold run> --out <per-fold csv>`。基线必须在**和它对比的模型同一批颅骨**上评 |
 | `experiments_log/attention_collapse.csv` | ✅ **每个最终模型各一次** | `attention_collapse.py --runs <各折的 run>`。坍缩是**一组权重**的性质，与划分无关，所以结论几乎不会变；但论文引的是最终模型那一份，得从那份读。⚠️ 三套以上架构一次跑会撞显存（TF 不归还显存），分几次跑即可 —— CSV 是合并写的 |
@@ -97,7 +97,16 @@ kernel 占着显存时这些脚本会 OOM。
 
 ### 两个 k 折会撞上的坑（现在就知道，省得到时候查）
 
-1. **`report.paired_stats` 在 k 折下不适用。** 它靠"所有 run 评的是同一批 20 颗颅骨"来逐颗配对；
-   各折的验证集不同，配不起来。k 折要的是**折间**均值 ± 标准差，是另一套聚合逻辑，得新写。
-   `MSN_compare_runs.ipynb` 第 1 节那条 `assert` 会先把你拦下来（这是故意的）。
+1. **`report.paired_stats` 在 k 折下不适用**（它靠"所有 run 评的是同一批 20 颗颅骨"来逐颗配对，
+   各折的验证集不同，配不起来）。**替代品已经写好**（2026-08-29）：`fold_frame` / `fold_summary` /
+   `fold_paired` / `format_fold_paired`，用法和注意事项见 `report.py` 里那段「k-fold」注释块。
+   开跑之前先知道这三条：
+   - ⚠️ **`--run-name` 要写成 `<config>_f<fold>`**（例如 `cd_rep05_full_f0`）。`fold_frame` 以
+     `run.json` 的 `fold` 为准、拿名字去核对，对不上直接 raise —— 20 个 run 全靠手写，这是唯一的防线。
+   - ⚠️ **k=5 时符号检验最小可能 p 是 0.0625，够不到项目的 p<0.002**（与 n=8 的粗糙度 / p2s 同一个算术）。
+     判据要换成「**k 折同向 且 |delta| > 2×SE**」，`fold_paired` 因此只报 `t`，不报 Wilcoxon。
+   - ⚠️ **池化 100 颗**（`paired_stats(fdf.assign(run=fdf["config"]), base, other)`）是尺子②、可推广性证据；
+     它的 p 对「这个配置更好」是**偏松**的（同一折的 20 颗共用一个训练出来的模型），不能当效应的显著性。
+   ⚠️ `MSN_compare_runs.ipynb` 第 1 节那条 `assert` **仍会先把你拦下来**（这是故意的）——
+   notebook 的 k 折读表一节还没写，聚合函数就位不等于 notebook 就位。
 2. **`report.epoch_matched` 仍然可用**，而且更需要 —— 各折的停止轮数同样会不一样。

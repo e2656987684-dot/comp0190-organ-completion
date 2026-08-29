@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 
 import numpy as np
 import pandas as pd
@@ -601,6 +602,206 @@ def format_paired(df, base, other, cols=None):
                else ("  *" if r["p_wilcoxon"] < 0.05 else ""))
         lines.append(f"{m + ' ' + arrow:16}{r['delta']:>+10.3f}{r['paired_se']:>11.3f}"
                      f"{ci:>21}{r['better']:>8}{r['p_sign']:>9.4f}{r['p_wilcoxon']:>10.4f}{star}")
+    return "\n".join(lines)
+
+
+# --------------------------------------------------------------------------- #
+# k-fold: aggregating across folds
+# --------------------------------------------------------------------------- #
+# `paired_stats` DOES NOT WORK UNDER K-FOLD, and this block is what replaces it.
+# It pairs two runs skull by skull, which is only possible because every
+# single-split run in this project validates on the same 20 skulls. Fold 0 and
+# fold 1 validate on disjoint skulls, so there is nothing to pair.
+#
+# The replacement is the FOLD MEAN: each fold contributes one number per config,
+# and those k numbers pair across configs because both sides used the same
+# partition. Three consequences, all worth knowing BEFORE an 18-20 hour run:
+#
+#   * k = 5 sets the resolution, and it was estimated in advance (devlog
+#     2026-08-24): training variance ~0.15 mm, so the standard error of a 5-fold
+#     mean DIFFERENCE is about 0.15*sqrt(2)/sqrt(5) ~ 0.09 mm, against a 2x2
+#     effect of 0.20-0.24 mm -- t ~ 2. Enough, not comfortable. Report anything
+#     under 0.1 mm as no measurable difference. If a cell lands on the edge, the
+#     fix is repeating the key cells WITHIN each fold, not adding folds: more
+#     folds shrink the split variance, not the training variance.
+#
+#   * The project's p < 0.002 bar is UNREACHABLE at fold level. Five paired
+#     values give a smallest possible sign-test p of 0.0625, so no rank test on
+#     folds can ever clear it -- the same arithmetic that capped the n=8
+#     roughness and point-to-surface comparisons. Read `t` and `better` instead;
+#     the k-fold form of the decision list is "all k folds agree AND
+#     |delta| > 2*se", not a p-value.
+#
+#   * Pooling all 100 skulls is ruler (2), NOT significance for the config.
+#     Each skull is validated exactly once per config, so
+#         paired_stats(fdf.assign(run=fdf["config"]), base, other)
+#     is a legitimate 100-skull paired test of "would this hold on other
+#     skulls". Its p-value is ANTI-CONSERVATIVE for "is this config better",
+#     because the 20 skulls inside one fold share a single trained model and
+#     their residuals are correlated. Quote it as generalisation evidence,
+#     never as the effect's significance.
+_FOLD_TAG = re.compile(r"^(?P<config>.+?)[_-]f(?P<fold>\d+)$")
+
+
+def fold_frame(df, runs):
+    """`eval_runs` output plus `config` and `fold` columns, preconditions checked.
+
+    `runs` is the authority: the fold index is read from each run.json and the
+    run NAME is only cross-checked against it. Deriving it from the name alone
+    would put an 18-hour experiment at the mercy of a typo in --run-name, and
+    this project has already lost a checkpoint to exactly that. Name fold runs
+    `<config>_f<fold>`, e.g. `cd_rep05_full_f0`.
+
+    Every precondition raises rather than warns, because each one makes the
+    aggregate silently wrong rather than visibly broken:
+      * a single-split run mixed in (its 20 skulls would be counted as a fold)
+      * two configs on different partitions (the fold means would not pair)
+      * a config missing a fold, or a fold appearing twice
+      * two defect-region definitions in one frame -- 5 mm rows and implant rows
+        average into a number that describes neither (see `defect_def`)
+    """
+    index, n_folds, val_ids = {}, set(), {}
+    for r in runs:
+        nf = int(r.meta.get("n_folds") or 0)
+        if nf <= 0:
+            raise ValueError(
+                f"{r.label}: run.json 记的是 n_folds={nf}，这是单次划分的 run。\n"
+                f"它的验证集不对应任何一折，混进来会被当成一折算进均值。")
+        n_folds.add(nf)
+        fold = r.meta.get("fold")
+        m = _FOLD_TAG.match(r.label)
+        if m is None:
+            raise ValueError(
+                f"{r.label}: run 名里没有折号。k 折的 --run-name 要写成 "
+                f"<config>_f<fold>，例如 cd_rep05_full_f{fold}。")
+        if int(m.group("fold")) != int(fold):
+            raise ValueError(
+                f"{r.label}: 名字里的折号是 {m.group('fold')}，而 run.json 记的是 "
+                f"fold={fold}。以 run.json 为准 —— 改名，不要改 run.json。")
+        key = (m.group("config"), int(fold))
+        index[r.label] = key
+        val_ids[key] = tuple(r.meta["val_ids"])
+    if len(n_folds) != 1:
+        raise ValueError(f"混着不同的 --n-folds: {sorted(n_folds)}，不可一起聚合")
+    k = n_folds.pop()
+
+    configs = sorted({c for c, _ in index.values()})
+    for c in configs:
+        got = sorted(f for cc, f in index.values() if cc == c)
+        if got != list(range(k)):
+            raise ValueError(f"{c}: 折号是 {got}，期望 0..{k - 1} 各一次")
+    for f in range(k):
+        if len({tuple(sorted(val_ids[(c, f)])) for c in configs}) != 1:
+            raise ValueError(
+                f"fold {f}: 各配置的验证集不同，折均值配不起来。\n"
+                f"k 折要用同一个 --seed 和同一个 --n-folds 跑满四格。")
+    seen = [i for f in range(k) for i in val_ids[(configs[0], f)]]
+    if len(seen) != len(set(seen)):
+        raise ValueError("同一配置的各折验证集有重叠 —— 这不是一次干净的 k 折划分")
+
+    unknown = sorted(set(df["run"]) - set(index))
+    if unknown:
+        raise ValueError(f"这些 run 不在 runs 里，无从判断属于哪一折: {unknown}")
+    if "defect_def" in df.columns:
+        defs = sorted(df["defect_def"].dropna().unique())
+        if len(defs) > 1:
+            raise ValueError(
+                f"这张表里有两种缺损区口径 {defs} —— 不可混算，先按 defect_def 过滤")
+        if df["defect_def"].isna().any():
+            raise ValueError("有行的 defect_def 是空的，无法确认它是哪个口径")
+
+    out = df.copy()
+    out["config"] = [index[r][0] for r in out["run"]]
+    out["fold"] = [index[r][1] for r in out["run"]]
+    return out
+
+
+def fold_summary(fdf, cols=None):
+    """Per config and metric: the k fold means, and their mean / std / SE.
+
+    Long form -- one row per (metric, config) -- because the wide form needs a
+    column MultiIndex and this gets read in a terminal. `mean` is the number a
+    thesis reports, `std_folds` the spread reported beside it, `se` what a
+    difference has to beat.
+    """
+    cols = cols or [c for c in SUMMARY_COLS + DEFECT_COLS if c in fdf.columns]
+    per_fold = fdf.groupby(["config", "fold"])[cols].mean()
+    rows = []
+    for c in cols:
+        for cfg, s in per_fold[c].groupby(level="config"):
+            n = int(s.notna().sum())
+            sd = float(s.std(ddof=1)) if n > 1 else float("nan")
+            rows.append({"metric": c, "config": cfg, "folds": n,
+                         "mean": float(s.mean()), "std_folds": sd,
+                         "se": sd / np.sqrt(n) if n > 1 else float("nan")})
+    return pd.DataFrame(rows).set_index(["metric", "config"]).round(4)
+
+
+def fold_paired(fdf, base, other, cols=None):
+    """Fold-level paired comparison of two configs -- the k-fold `paired_stats`.
+
+    Pairs the configs FOLD BY FOLD, which is what makes it valid: fold i is the
+    same skulls on both sides, so "this fold happens to hold the hard skulls"
+    cancels the way per-skull pairing cancels "this skull is hard". Each fold
+    contributes one difference, so n = k -- five, not a hundred.
+
+    Per metric: the mean difference (other - base), its standard error across
+    folds, a t-based 95% interval (NOT 1.96 -- at k=5 that is 40% too narrow),
+    how many folds moved in the improving direction, and the paired t on the
+    fold means. `t` is the column to read: it is delta/se, and the plan written
+    before the run expected t ~ 2 for the 2x2 cells.
+
+    ⚠️ No Wilcoxon here, deliberately. At k=5 its smallest attainable p is
+    0.0625, so reporting it would only invite reading "not significant" off a
+    test that cannot be significant.
+    """
+    from scipy import stats
+
+    cols = cols or [c for c in SUMMARY_COLS + DEFECT_COLS
+                    if c in fdf.columns and c not in ("defect_gt_%", "defect_n_pred")]
+    per_fold = fdf.groupby(["config", "fold"])[cols].mean()
+    have = set(per_fold.index.get_level_values("config"))
+    for name in (base, other):
+        if name not in have:
+            raise ValueError(f"没有这个配置: {name}；表里有的是 {sorted(have)}")
+    a = per_fold.xs(base, level="config")
+    b = per_fold.xs(other, level="config")
+    folds = a.index.intersection(b.index)
+    rows = []
+    for c in cols:
+        d = (b.loc[folds, c] - a.loc[folds, c]).dropna()
+        n = len(d)
+        if n < 2:
+            continue
+        m = float(d.mean())
+        se = float(d.std(ddof=1) / np.sqrt(n))
+        tcrit = float(stats.t.ppf(0.975, n - 1))
+        better = int((d < 0).sum() if c in LOWER_IS_BETTER else (d > 0).sum())
+        rows.append({"metric": c, "delta": m, "fold_se": se,
+                     "ci_lo": m - tcrit * se, "ci_hi": m + tcrit * se,
+                     "t": m / se if se > 0 else float("nan"),
+                     "p_t": float(stats.ttest_rel(b.loc[folds, c],
+                                                  a.loc[folds, c]).pvalue),
+                     "better": f"{better}/{n}"})
+    return pd.DataFrame(rows).set_index("metric").round(4)
+
+
+def format_fold_paired(fdf, base, other, cols=None):
+    """fold_paired as a plain-text table, with the k=5 caveat in the header."""
+    s = fold_paired(fdf, base, other, cols)
+    k = int(fdf["fold"].nunique())
+    head = (f"{other}  vs  {base}   （{k} 折配对；delta = {other} − {base}）\n"
+            f"⚠️ n={k}：符号检验最小可能 p = {2 * 0.5 ** k:.4f}，到不了项目的 p<0.002。"
+            f"读 t 和「改善几折」，判据是「k 折同向 且 |delta| > 2×SE」\n"
+            f"{'metric':16}{'delta':>10}{'fold SE':>10}{'95% CI(t)':>21}"
+            f"{'t':>8}{'p_t':>9}{'改善':>8}")
+    lines = [head, "-" * len(head.split("\n")[-1])]
+    for m, r in s.iterrows():
+        arrow = "↓好" if m in LOWER_IS_BETTER else "↑好"
+        ci = f"[{r['ci_lo']:+.3f},{r['ci_hi']:+.3f}]"
+        flat = "  ← 0.1mm 以下，按无可测差异读" if abs(r["delta"]) < 0.1 and "mm" in m else ""
+        lines.append(f"{m + ' ' + arrow:16}{r['delta']:>+10.3f}{r['fold_se']:>10.3f}"
+                     f"{ci:>21}{r['t']:>8.2f}{r['p_t']:>9.4f}{r['better']:>8}{flat}")
     return "\n".join(lines)
 
 

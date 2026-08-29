@@ -39,7 +39,7 @@ COMP0190 硕士项目：**颅骨点云补全**（SkullFix，100 对，80 训 / 2
 | 顺序 | 文件 | 读多少 | 约 token |
 |---|---|---|---|
 | 1 | `TODO.md` **最后一节** | 全读（当前有效清单） | 3.8k |
-| 2 | `devlog.md` | **全读**（46 条日期条目，倒着读更快进入状态）<br>⚠️ 先看文件头那条「devlog 里一切都是待定的」 | **~80k** |
+| 2 | `devlog.md` | **全读**（47 条日期条目，倒着读更快进入状态）<br>⚠️ 先看文件头那条「devlog 里一切都是待定的」 | **~80k** |
 | 3 | `experiments_log/README.md` | 全读（有效性分界、噪声判据、采样地板、各 run 定性） | 7.6k |
 | 4 | `src/eval/README.md` | 全读（脚本怎么跑 + **k 折后要重跑什么**） | 2k |
 | 5 | `notebooks/README.md` | 全读（两个 notebook 的分工） | 1k |
@@ -57,7 +57,7 @@ devlog 只读**最近 8 条**。上面的「项目脉络」已经覆盖了更早
 ### 定位 devlog 的技巧（不用手工维护目录）
 
 ```bash
-grep -n "^## " devlog.md          # 46 条的日期 + 标题 + 行号，永远是最新的
+grep -n "^## " devlog.md          # 47 条的日期 + 标题 + 行号，永远是最新的
 grep -n "⭐\|⚠️" devlog.md | head -40   # 标了星号和警告的条目，重要性排序
 ```
 
@@ -158,7 +158,10 @@ print(df.groupby('run', sort=False)[['CD_t_mm','defect_cov_mm','clump_%']].mean(
 
 **主指标是 `defect_cov_mm`（缺损区覆盖）。** 只有约 6.2% 的 GT 点在缺损区，其余是输入里
 已给、模型只需复现的表面 —— 全点云指标主要在量"抄得像不像"。实测佐证：2×2 消融在缺损
-覆盖上四格**全部显著**，在全点云 CD_t 上**全部不显著**。
+覆盖上四格**全部显著**（95% CI 全部不跨零，p ≤ 0.002），在全点云 CD_t 上**四格 CI 全部跨零**。
+
+⚠️ **后半句必须带判据**：CD_t 上最强的那格（+repulsion，无 DCD）是 18/20、`p_wilcoxon = 0.0017`
+—— **过了 0.002 线**，只是区间仍跨零。简写成"全部不显著"会被问穿。
 
 ⚠️ **缺损区自 2026-08-28 起由数据集自带的植入物真值定义**（`experiments_log/defect_mask_labels.npz`，
 由 `make_defect_labels.py` 生成），**不再是距离规则**。`report.DEFECT_MM = 5.0` 只剩**预测侧**的容差。
@@ -199,8 +202,12 @@ print(df.groupby('run', sort=False)[['CD_t_mm','defect_cov_mm','clump_%']].mean(
 
 **哪些要重跑、从哪个口子重跑，见 `src/eval/README.md` 的「k 折之后要重跑什么」一节。**
 
-⚠️ 两个 k 折会撞上的坑：`report.paired_stats` **在 k 折下不适用**（各折验证集不同，
-配不起来，得新写折间聚合）；`MSN_compare_runs.ipynb` 第 1 节那条 assert 会先拦下你。
+⚠️ k 折会撞上的坑：`report.paired_stats` **在 k 折下不适用**（各折验证集不同，配不起来）。
+替代品 `fold_frame` / `fold_summary` / `fold_paired` **已于 2026-08-29 入库**，用之前先知道三条：
+⚠️ **`--run-name` 必须写成 `<config>_f<fold>`**（折号以 `run.json` 为准、拿名字核对，对不上直接报错）；
+⚠️ **k=5 时符号检验 p 的下限是 0.0625，够不到项目的 p<0.002**，判据换成「k 折同向 且 |delta| > 2×SE」；
+⚠️ 池化 100 颗只是尺子②，它的 p 对"这个配置更好"偏松。
+`MSN_compare_runs.ipynb` 第 1 节那条 assert **仍会先拦下你**——notebook 的 k 折读表一节还没写。
 
 ⚠️ **k 折是所有改进做完之后的终审，不是现在做的事**（用户明确过）。
 重复实验（同配置跑两次）是现阶段分辨运气的工具，**不是 k 折的替代**。
@@ -249,6 +256,7 @@ src/models/msn_demo_arch.py      原 demo 架构逐字复制（只用来跑作�
                                  ⚠️ 两者权重不兼容，别混；加载失败是静默的
 src/models/train_skullfix.py     训练 CLI（--from-run / --overwrite / --defect-every ...）
 src/eval/report.py               Run / eval_runs / epoch_matched / paired_stats / fig_*
+                                 k 折折间聚合：fold_frame / fold_summary / fold_paired
 src/eval/mesh_viz.py             mesh 重建 + surface_stats（⚠️ 重建只能看，不能算指标）
 src/eval/fold_text_branch.py     文本分支折叠验证（证明它等于 4 个偏置向量）
 src/eval/sampling_floor.py       采样地板（k 折后不用重跑）
