@@ -251,3 +251,5 @@ experiments/
 # 讲稿是手写的，一直跟踪。
 reports/figures/*.png
 reports/*.pptx
+# mesh_preview.py 的 HTML：一张 20~40 MB，是看一眼的产物，不是交付物
+reports/preview/

@@ -25,6 +25,7 @@ PY=/root/miniconda3/envs/comp0190-msn/bin/python
 | **`point_to_surface.py`** | `$PY src/eval/point_to_surface.py`<br>（`--self-test` 只跑合成几何） | 终端 + CSV | ✅ **合并写** `experiments_log/p2s.csv` | ✅ 建一个 187M 模型（推理完就释放） | 约 3~5 分钟（8 颗） |
 | **`normal_quality.py`** | `$PY src/eval/normal_quality.py`<br>（`--self-test` 只跑合成对照，不碰数据） | 终端 + CSV | ✅ **合并写** `experiments_log/normal_quality.csv` | ❌ 纯 CPU（但 marching cubes 峰值 1~2GB/体数据） | 约 2~4 分钟（8 颗 × 2 个体数据） |
 | **`roughness.py`** | `$PY src/eval/roughness.py`（`--runs` / `--n`） | 终端 + CSV | ✅ **合并写** `experiments_log/roughness.csv` | ✅ 建一个 187M 模型 | 约 1 分钟 |
+| **`mesh_preview.py`** | `$PY src/eval/mesh_preview.py`<br>（`--run` / `--skull` / `--res` / `--truth` 加原始体数据两格 / ⚠️`--preset` 仅探索用） | 浏览器打开 HTML | ✅ 写 `reports/preview/<run>_<skull>.html`（**gitignored**，三格 17~40 MB，`--truth` 四格约 39 MB） | ✅ 建一个 187M 模型 | 约 1 分钟 |
 | **`sampling_floor.py`** | `$PY src/eval/sampling_floor.py` | 终端 + CSV | ✅ 写 `experiments_log/sampling_floor.csv` | ❌ 纯 CPU | 约 3~4 分钟（100 颗） |
 | **`eval_pretrained_baseline.py`** | `$PY src/eval/eval_pretrained_baseline.py` | 终端 + CSV | ✅ 写 `experiments_log/pretrained_baseline/eval_val20_x5.csv`（**不动**旧的 `eval_val20.csv`） | ✅ 296.9M（含 BERT） | 十几分钟 |
 | `make_report_figures.py` | `$PY src/eval/make_report_figures.py` | `reports/figures/*.png` | ✅ 覆盖写 | ✅ | 几分钟 |

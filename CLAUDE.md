@@ -39,7 +39,7 @@ COMP0190 硕士项目：**颅骨点云补全**（SkullFix，100 对，80 训 / 2
 | 顺序 | 文件 | 读多少 | 约 token |
 |---|---|---|---|
 | 1 | `TODO.md` **最后一节** | 全读（当前有效清单） | 3.8k |
-| 2 | `devlog.md` | **全读**（47 条日期条目，倒着读更快进入状态）<br>⚠️ 先看文件头那条「devlog 里一切都是待定的」 | **~80k** |
+| 2 | `devlog.md` | **全读**（48 条日期条目，倒着读更快进入状态）<br>⚠️ 先看文件头那条「devlog 里一切都是待定的」 | **~80k** |
 | 3 | `experiments_log/README.md` | 全读（有效性分界、噪声判据、采样地板、各 run 定性） | 7.6k |
 | 4 | `src/eval/README.md` | 全读（脚本怎么跑 + **k 折后要重跑什么**） | 2k |
 | 5 | `notebooks/README.md` | 全读（两个 notebook 的分工） | 1k |
@@ -57,7 +57,7 @@ devlog 只读**最近 8 条**。上面的「项目脉络」已经覆盖了更早
 ### 定位 devlog 的技巧（不用手工维护目录）
 
 ```bash
-grep -n "^## " devlog.md          # 47 条的日期 + 标题 + 行号，永远是最新的
+grep -n "^## " devlog.md          # 48 条的日期 + 标题 + 行号，永远是最新的
 grep -n "⭐\|⚠️" devlog.md | head -40   # 标了星号和警告的条目，重要性排序
 ```
 
@@ -267,6 +267,8 @@ src/eval/point_to_surface.py     点到面指标（地板互验；⚠️ signed_
 src/eval/normal_quality.py       法向可估性闸门（⛔ 不通过 → Poisson 取消）
 src/eval/roughness.py            粗糙度（⚠️ 旧值 0.736/0.760 符号是反的，已作废）
 src/eval/eval_pretrained_baseline.py  预训练基线重评（k 折后每折各跑一次）
+src/eval/mesh_preview.py         看一眼 mesh（三格 HTML；--truth 加原始体数据两格）
+                                 ⚠️ 只能看不能算指标；不产出入库数字
 notebooks/MSN_train_skullfix.ipynb    发起训练（只改第 1 节控制面板）
 notebooks/MSN_compare_runs.ipynb      判读结果（指标词典、判决标准都在里面）
 notebooks/MSN_surface_quality.ipynb   mesh 可视化 + 密度诊断
