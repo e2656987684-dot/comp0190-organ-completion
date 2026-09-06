@@ -39,7 +39,8 @@ COMP0190 硕士项目：**颅骨点云补全**（SkullFix，100 对，80 训 / 2
 | 顺序 | 文件 | 读多少 | 约 token |
 |---|---|---|---|
 | 1 | `TODO.md` **最后一节** | 全读（当前有效清单） | 3.8k |
-| 2 | `devlog.md` | **全读**（49 条日期条目，倒着读更快进入状态）<br>⚠️ 先看文件头那条「devlog 里一切都是待定的」 | **~80k** |
+| 1.5 | `RUNBOOK.md` | 全读（所有终端命令，按任务排；命令只在这里写一份） | 1.2k |
+| 2 | `devlog.md` | **全读**（50 条日期条目，倒着读更快进入状态）<br>⚠️ 先看文件头那条「devlog 里一切都是待定的」 | **~80k** |
 | 3 | `experiments_log/README.md` | 全读（有效性分界、噪声判据、采样地板、各 run 定性） | 7.6k |
 | 4 | `src/eval/README.md` | 全读（脚本怎么跑 + **k 折后要重跑什么**） | 2k |
 | 5 | `notebooks/README.md` | 全读（两个 notebook 的分工） | 1k |
@@ -57,7 +58,7 @@ devlog 只读**最近 8 条**。上面的「项目脉络」已经覆盖了更早
 ### 定位 devlog 的技巧（不用手工维护目录）
 
 ```bash
-grep -n "^## " devlog.md          # 49 条的日期 + 标题 + 行号，永远是最新的
+grep -n "^## " devlog.md          # 50 条的日期 + 标题 + 行号，永远是最新的
 grep -n "⭐\|⚠️" devlog.md | head -40   # 标了星号和警告的条目，重要性排序
 ```
 
@@ -89,8 +90,13 @@ print(df.groupby('run', sort=False)[['CD_t_mm','defect_cov_mm','clump_%']].mean(
 - 大概多久
 - **k 折之后要不要重跑**
 
-**写新脚本时**：放进 `src/eval/`，同时在 `src/eval/README.md` 的表里加一行。
+**写新脚本时**：放进 `src/eval/`，同时在 `src/eval/README.md` 的表里加一行；
+**如果它是用户会反复敲的命令，再往 `RUNBOOK.md` 里加一条**。
 不加就等于又造了一个"临时脚本数字"（见下面第 3 条）。
+
+⚠️ **给用户看的东西，先确认他那一侧打得开。** 远程 pod + VSCode：PNG 能直接看，
+几十 MB 的 HTML 看不了。**修好一个底层能力 ≠ 用户拿到了它 —— 交付的单位是
+用户实际会跑的那条命令。**（2026-09-06 连栽两次换来的。）
 
 **给用户的回答**：用中文；结论先行；数字要带出处；不确定就说不确定。
 
@@ -269,8 +275,9 @@ src/eval/point_to_surface.py     点到面指标（地板互验；⚠️ signed_
 src/eval/normal_quality.py       法向可估性闸门（⛔ 不通过 → Poisson 取消）
 src/eval/roughness.py            粗糙度（⚠️ 旧值 0.736/0.760 符号是反的，已作废）
 src/eval/eval_pretrained_baseline.py  预训练基线重评（k 折后每折各跑一次）
-src/eval/mesh_preview.py         看一眼 mesh（三格 HTML；--truth 加原始体数据两格）
+src/eval/mesh_preview.py         看一眼 mesh（默认出 PNG；--truth 加原始体数据两格）
                                  ⚠️ 只能看不能算指标；不产出入库数字
+RUNBOOK.md                       所有终端命令，按「我现在要干嘛」排
 notebooks/MSN_train_skullfix.ipynb    发起训练（只改第 1 节控制面板）
 notebooks/MSN_compare_runs.ipynb      判读结果（指标词典、判决标准都在里面）
 notebooks/MSN_surface_quality.ipynb   mesh 可视化 + 密度诊断
