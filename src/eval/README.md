@@ -25,7 +25,7 @@ PY=/root/miniconda3/envs/comp0190-msn/bin/python
 | **`point_to_surface.py`** | `$PY src/eval/point_to_surface.py`<br>（`--self-test` 只跑合成几何） | 终端 + CSV | ✅ **合并写** `experiments_log/p2s.csv` | ✅ 建一个 187M 模型（推理完就释放） | 约 3~5 分钟（8 颗） |
 | **`normal_quality.py`** | `$PY src/eval/normal_quality.py`<br>（`--self-test` 只跑合成对照，不碰数据） | 终端 + CSV | ✅ **合并写** `experiments_log/normal_quality.csv` | ❌ 纯 CPU（但 marching cubes 峰值 1~2GB/体数据） | 约 2~4 分钟（8 颗 × 2 个体数据） |
 | **`roughness.py`** | `$PY src/eval/roughness.py`（`--runs` / `--n`） | 终端 + CSV | ✅ **合并写** `experiments_log/roughness.csv` | ✅ 建一个 187M 模型 | 约 1 分钟 |
-| **`mesh_preview.py`** | `$PY src/eval/mesh_preview.py`<br>（`--run` / `--skull` / `--res` / `--truth` 加原始体数据两格 / ⚠️`--preset` 仅探索用） | 浏览器打开 HTML | ✅ 写 `reports/preview/<run>_<skull>.html`（**gitignored**，三格 17~40 MB，`--truth` 四格约 39 MB） | ✅ 建一个 187M 模型 | 约 1 分钟 |
+| **`mesh_preview.py`** | `$PY src/eval/mesh_preview.py`<br>（`--run` / `--skull` / `--res` / `--truth` 加原始体数据两格 / `--camera` / ⚠️`--preset` 仅探索用） | 浏览器打开 HTML | ✅ 写 `reports/preview/<run>_<skull>.html`（**gitignored**，三格 17~40 MB，`--truth` 四格约 39 MB） | ✅ 建一个 187M 模型 | 约 1 分钟 |
 | **`sampling_floor.py`** | `$PY src/eval/sampling_floor.py` | 终端 + CSV | ✅ 写 `experiments_log/sampling_floor.csv` | ❌ 纯 CPU | 约 3~4 分钟（100 颗） |
 | **`eval_pretrained_baseline.py`** | `$PY src/eval/eval_pretrained_baseline.py` | 终端 + CSV | ✅ 写 `experiments_log/pretrained_baseline/eval_val20_x5.csv`（**不动**旧的 `eval_val20.csv`） | ✅ 296.9M（含 BERT） | 十几分钟 |
 | `make_report_figures.py` | `$PY src/eval/make_report_figures.py` | `reports/figures/*.png` | ✅ 覆盖写 | ✅ | 几分钟 |
@@ -50,16 +50,24 @@ pandas 默认读成整数 `83`，以 id 为键的比对会**静默落空**。本
 ⚠️ **需要 GPU 的脚本跑之前，先把 notebook 的 kernel Restart** —— 一个 187M 模型就占 15.5/24 GiB，
 kernel 占着显存时这些脚本会 OOM。
 
-⚠️ `make_report_figures.py` 的 `RUNS` **目前指向已裁剪权重的三个 run**（`baseline_es20` /
-`dcd_l2` / `dcd_w3`），照现状跑会失败。第一次汇报的图已用 `git add -f` 入库，
-要复用这个脚本得先把 `RUNS` 换成还有权重的 run —— 见脚本顶部的说明。
+✅ **出图能力 2026-09-06 修好了**（此前 `fig.write_image()` 一律抛 RuntimeError）。两件事一起：
+① `plotly_get_chrome` —— kaleido 靠一个**无头 Chrome** 渲染 plotly 图再截图，环境里没有；
+② `libnss3` / `libnspr4` —— 光下 Chrome 不够，缺这两个库它**启动后立刻退出**，而报错完全不提缺库。
+两条都写进 `setup_env.sh` 第 5 节了 ⚠️ **Chrome 装在 `/root`（临时盘），重部署后要重跑那一节。**
+
+格式怎么选：**3D mesh 用 PNG**（把 25 万个三角形矢量化是荒唐的，`scale=3` 够印刷）；
+**2D 曲线用 SVG/PDF**（矢量，放大不糊）。实测 2D 曲线 PNG 252 KB / SVG 37 KB / PDF 24 KB。
+
+⚠️ `make_report_figures.py` 的 `RUNS` 已于同日换成还有权重的**干净 2×2**
+（`cd_only` / `lr_fix_only` / `rep_w05` / `cd_rep05_full`）。**哪几个 run 讲故事是叙事选择**，
+写论文时随时改；脚本顶部写了每一格对应的扎堆率。
 
 ## 模块（不单独跑，被 notebook `import`）
 
 | 模块 | 做什么 |
 |---|---|
 | `report.py` | ⚠️ `DEFECT_MM` 现在**只管预测侧**；缺损区 GT 侧走 `defect_labels()` 读真值标签。<br>`Run` / `load_runs` / `eval_runs`（逐颅骨指标）/ `epoch_matched`（同轮次）/ `paired_stats`（单折逐颅骨配对）/ 各种 `fig_*`<br>**k 折专用**：`fold_frame`（贴 config/fold + 前置条件全部 raise）/ `fold_summary`（折均值 ± std）/ `fold_paired` + `format_fold_paired`（折间配对，`paired_stats` 的 k 折替代品）|
-| `mesh_viz.py` | ⛔ **其 `signed_deviation` / `dev_*` 已于 2026-08-27 判定过时，停止引用**（高估 1.64×，且对表面偏移结构性失明——拟合平面落在骨壳正中，`outside_pct` 恒 ≈50%）。改用 `point_to_surface.py` 的 `p2s_*`。代码保留，理由见其 docstring。<br>点云 → mesh 重建、`surface_stats`（扎堆率/间距 CV/有符号偏差/**粗糙度**）、`local_roughness`（⚠️ 读它的 docstring：这个度量被骨壳厚度污染，只有 GT-vs-pred 的**差值**有意义）、诊断图 |
+| `mesh_viz.py` | ⭐ **`CAMERAS` 两个具名视角**：`"default"`（reports/ 里既有图用的）⚠️ **看不到缺损** —— 实测缺损方向 `[0.011, 0.664, 0.747]`（6 颗颅骨一致性 0.99）与它点积仅 **−0.07**，几乎正交，残缺和完整渲染出来几乎一样；`"defect"` 正对缺损。相机和 `RECON` 同理是锁定的：一张对比图从头到尾只能用一个。<br>⛔ **其 `signed_deviation` / `dev_*` 已于 2026-08-27 判定过时，停止引用**（高估 1.64×，且对表面偏移结构性失明——拟合平面落在骨壳正中，`outside_pct` 恒 ≈50%）。改用 `point_to_surface.py` 的 `p2s_*`。代码保留，理由见其 docstring。<br>点云 → mesh 重建、`surface_stats`（扎堆率/间距 CV/有符号偏差/**粗糙度**）、`local_roughness`（⚠️ 读它的 docstring：这个度量被骨壳厚度污染，只有 GT-vs-pred 的**差值**有意义）、诊断图 |
 
 ⚠️ 改完这两个模块，notebook 里要 `importlib.reload(rp)` 或重启 kernel，否则拿到的是缓存的旧模块。
 

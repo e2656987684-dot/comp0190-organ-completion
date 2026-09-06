@@ -39,7 +39,7 @@ COMP0190 硕士项目：**颅骨点云补全**（SkullFix，100 对，80 训 / 2
 | 顺序 | 文件 | 读多少 | 约 token |
 |---|---|---|---|
 | 1 | `TODO.md` **最后一节** | 全读（当前有效清单） | 3.8k |
-| 2 | `devlog.md` | **全读**（48 条日期条目，倒着读更快进入状态）<br>⚠️ 先看文件头那条「devlog 里一切都是待定的」 | **~80k** |
+| 2 | `devlog.md` | **全读**（49 条日期条目，倒着读更快进入状态）<br>⚠️ 先看文件头那条「devlog 里一切都是待定的」 | **~80k** |
 | 3 | `experiments_log/README.md` | 全读（有效性分界、噪声判据、采样地板、各 run 定性） | 7.6k |
 | 4 | `src/eval/README.md` | 全读（脚本怎么跑 + **k 折后要重跑什么**） | 2k |
 | 5 | `notebooks/README.md` | 全读（两个 notebook 的分工） | 1k |
@@ -57,7 +57,7 @@ devlog 只读**最近 8 条**。上面的「项目脉络」已经覆盖了更早
 ### 定位 devlog 的技巧（不用手工维护目录）
 
 ```bash
-grep -n "^## " devlog.md          # 48 条的日期 + 标题 + 行号，永远是最新的
+grep -n "^## " devlog.md          # 49 条的日期 + 标题 + 行号，永远是最新的
 grep -n "⭐\|⚠️" devlog.md | head -40   # 标了星号和警告的条目，重要性排序
 ```
 
@@ -246,6 +246,8 @@ PY=/root/miniconda3/envs/comp0190-msn/bin/python     # conda 环境 comp0190-msn
   （`/root/.claude` 是指向 `/workspace/.claude-config` 的软链接，所以对话记录本身是安全的。）
 - `experiments/`（权重 5.6G）和 `data/` 都 gitignored；
   `experiments_log/`（run.json + history.csv + 各种 CSV）**跟踪进 git**。
+- ⚠️ **出图（`fig.write_image`）依赖一个无头 Chrome + `libnss3`/`libnspr4`**，
+  装在 `/root`（临时盘）→ **重部署后要重跑 `setup_env.sh` 第 5 节**，否则论文图一张都出不来。
 
 ## 九、仓库地图
 

@@ -126,6 +126,23 @@ print('tensorflow', tf.__version__, 'GPUs:', tf.config.list_physical_devices('GP
 from transformers import TFBertModel, BertTokenizer
 print('TFBertModel import: OK')
 "
+
+# ---- 5. 出图依赖：kaleido 要一个无头 Chrome 才能把 plotly 图导成 PNG/SVG/PDF ----
+# 2026-09-06 才发现这条是缺的：make_report_figures.py 里每一行 fig.write_image()
+# 在没有 Chrome 时都会抛 RuntimeError，而论文的图全靠它。
+# ⚠️ Chrome 装在 /root/.local/share/choreographer/ —— /root 是临时盘，重部署会清空，
+#    所以这一步每次重建环境都要跑，不能只跑一次。
+echo "=== 出图依赖（kaleido + 无头 Chrome）==="
+apt-get install -y --no-install-recommends libnss3 libnspr4 >/dev/null 2>&1 || \
+    (apt-get update -qq && apt-get install -y --no-install-recommends libnss3 libnspr4)
+    # ⚠️ 光下 Chrome 不够：它动态链接 libnss3/libnspr4，容器基础镜像里没有，
+    #    缺了会「启动后立刻退出」，报错信息完全不提是缺库。
+plotly_get_chrome -y || echo "⚠️ Chrome 安装失败 —— fig.write_image() 会用不了，出图前必须修"
+python -c "
+import plotly.graph_objects as go, tempfile, os
+p = os.path.join(tempfile.mkdtemp(), 't.png')
+go.Figure(go.Scatter(x=[1,2], y=[1,2])).write_image(p)
+print('出图自检 OK:', os.path.getsize(p), 'bytes')"
 conda deactivate
 
 echo ""

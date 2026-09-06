@@ -23,29 +23,34 @@ os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")
 import numpy as np
 import pandas as pd
 
-# ⚠️ THIS LIST NO LONGER RUNS AS-IS (2026-08-24).
-# The first four entries are the pre-LR-fix runs, which were reclassified as
-# erroneous experiments on 2026-08-21 and whose weights were then pruned -- see
-# experiments_log/README.md. Training is not bit-reproducible on GPU, so they
-# cannot be recreated; the PNGs those runs produced are now tracked in git
-# instead (reports/figures/, force-added past .gitignore).
+# Repointed 2026-09-06 at runs that still have weights. The previous list led
+# with the four pre-LR-fix runs, reclassified as erroneous on 2026-08-21 and
+# pruned on 08-24; training is not bit-reproducible, so they cannot come back
+# (the PNGs they made are tracked in reports/figures/ instead, force-added past
+# .gitignore). It also named `cd_rep05`, a directory that does not exist.
 #
-# Before reusing this script for thesis figures, point RUNS at runs that still
-# have weights: lr_fix_only, rep_w05, cd_only, cd_rep05_full, cd_rep05_r2,
-# tie_qk, notext, pp_attn. That is a narrative choice (which runs the figure
-# tells its story with), so it is deliberately left to whoever writes that
-# chapter rather than silently rewritten here.
+# ⚠️ WHICH RUNS TELL THE STORY IS A NARRATIVE CHOICE -- change it freely when
+# writing. What is below is the clean 2x2, i.e. the same four cells the thesis
+# argues from, all of them after the validity boundary:
+#     cd_only        CD alone            clumping 13.60%
+#     lr_fix_only    + DCD                          5.61%   DCD halves it
+#     rep_w05        + DCD + repulsion              1.36%
+#     cd_rep05_full  + repulsion only               1.24%   <- best config
+#
+# Labels match the directory names on purpose: `Run.label` defaults to the
+# basename, and a relabelled run is how the same experiment ended up in
+# eval_all_runs.csv under two names (`lr_fix` vs `lr_fix_only`).
 RUNS = [
-    ("baseline", "baseline_es20"),
-    ("dcd_w3", "msn_skullfix/dcd_w3"),
-    ("dcd_l2", "msn_skullfix/dcd_l2"),
-    ("lr_fix", "msn_skullfix/lr_fix_only"),
+    ("cd_only", "msn_skullfix/cd_only"),
+    ("lr_fix_only", "msn_skullfix/lr_fix_only"),
     ("rep_w05", "msn_skullfix/rep_w05"),
-    ("cd_rep05", "msn_skullfix/cd_rep05"),
+    ("cd_rep05_full", "msn_skullfix/cd_rep05_full"),
 ]
-# The density figure drops dcd_l2: it is the same story as baseline and a fourth
-# panel only makes each one narrower.
-DENSITY_RUNS = ["baseline", "lr_fix", "rep_w05"]
+# Three panels, not four -- a fourth only makes each one narrower. These three
+# are the density argument end to end: CD alone -> DCD halves the clumping ->
+# repulsion nearly removes it. Replaces the old baseline/lr_fix/rep_w05 trio,
+# whose first panel crossed the validity boundary.
+DENSITY_RUNS = ["cd_only", "lr_fix_only", "cd_rep05_full"]
 SHOW_SKULL = None          # None -> first validation skull
 SCALE = 2                  # PNG upscale, so text stays sharp when projected
 C_PRED = "#1565C0"

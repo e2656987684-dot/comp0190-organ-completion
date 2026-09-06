@@ -87,6 +87,26 @@ PRESETS = {
 # for that gap (measured: 0.0% for GT vs 11.2% for the current model).
 CLUMP_MM = 2.0
 
+# Locked camera positions, for the same reason RECON is locked: a figure that
+# compares two things must use ONE of these throughout, or part of what you are
+# looking at is the viewpoint.
+#
+# ⭐ "default" does NOT show the defect, which is worth knowing before choosing.
+# Measured over six skulls (070 000 031 004 083 053), the implant sits in the
+# direction [0.011, 0.664, 0.747] from the skull centroid, and the six agree to
+# a pairwise dot product of 0.99 -- SkullFix cuts its defects in the same place
+# every time. The default camera's unit vector is [0.000, -0.794, 0.608], whose
+# dot product with that is -0.07: very nearly orthogonal, so the hole is edge-on
+# and a defective skull renders almost identically to a complete one.
+#
+# "defect" is 1.95x the measured direction. Use it for anything whose point is
+# "the hole is filled"; use "default" to stay consistent with the figures already
+# in reports/ (they were all made with it).
+CAMERAS = {
+    "default": dict(x=0.0, y=-1.5, z=1.15),
+    "defect": dict(x=0.02, y=1.30, z=1.46),
+}
+
 
 def pc_to_mesh(points, scale_mm, **overrides):
     """Point cloud -> shaded-renderable mesh, via a KD-tree distance field.
@@ -282,8 +302,13 @@ def format_stats(rows):
 # --------------------------------------------------------------------------- #
 # plotly figures
 # --------------------------------------------------------------------------- #
-def fig_meshes(items, title="", height=620):
-    """items: list of (mesh, label). Side-by-side shaded meshes, shared camera."""
+def fig_meshes(items, title="", height=620, camera="default"):
+    """items: list of (mesh, label). Side-by-side shaded meshes, shared camera.
+
+    `camera`: a key of CAMERAS, or an explicit dict(x=, y=, z=). Defaults to
+    "default" so every figure already in reports/ regenerates unchanged --
+    ⚠️ but read the note on CAMERAS first: that view does not show the defect.
+    """
     import plotly.graph_objects as go
     from plotly.subplots import make_subplots
 
@@ -298,8 +323,9 @@ def fig_meshes(items, title="", height=620):
                                               roughness=0.85, fresnel=0.1),
                                 lightposition=dict(x=120, y=180, z=200),
                                 showscale=False, hoverinfo="skip"), row=1, col=i)
+    eye = CAMERAS[camera] if isinstance(camera, str) else camera
     scene = dict(aspectmode="data", xaxis_visible=False, yaxis_visible=False,
-                 zaxis_visible=False, camera=dict(eye=dict(x=0.0, y=-1.5, z=1.15)))
+                 zaxis_visible=False, camera=dict(eye=dict(**eye)))
     fig.update_layout(title=title, height=height, margin=dict(l=0, r=0, t=60, b=0),
                       **{f"scene{i if i > 1 else ''}": scene for i in range(1, len(items) + 1)})
     return fig

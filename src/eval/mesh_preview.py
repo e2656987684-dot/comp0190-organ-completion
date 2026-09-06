@@ -158,6 +158,9 @@ def main():
                          "All of them out-resolve the 4.03 mm point spacing.")
     ap.add_argument("--raw-root", default=os.path.join(REPO, "data", "14161307",
                                                        "SkullFix", "training_set"))
+    ap.add_argument("--camera", default="defect", choices=["defect", "default"],
+                    help="defect（默认）= 正对缺损，看得见洞；default = reports/ 里"
+                         "既有图用的那个视角，⚠️ 它与缺损方向近乎正交，看不见洞。")
     ap.add_argument("--out", default=None,
                     help="output .html (default reports/preview/<run>_<skull>.html)")
     ap.add_argument("--device", default="/GPU:0")
@@ -247,7 +250,10 @@ def main():
         else "smoothing locked (mesh_viz.RECON)"
     if args.truth:
         note += " · outer panels = raw volumes; the crispness gap is the REPRESENTATION, not the model"
-    fig = mv.fig_meshes(items, f"skull_{sid} — {run.label} — res={res}, {note}", height=600)
+    # ⭐ 默认用正对缺损的相机：本脚本的全部意义就是看那个洞填没填上，而 mesh_viz
+    #    的 "default" 相机与缺损方向近乎正交（点积 −0.07），残缺和完整看起来几乎一样。
+    fig = mv.fig_meshes(items, f"skull_{sid} — {run.label} — res={res}, {note}",
+                        height=600, camera=args.camera)
 
     out = args.out or os.path.join(REPO, "reports", "preview", f"{run.label}_{sid}.html")
     os.makedirs(os.path.dirname(out), exist_ok=True)
