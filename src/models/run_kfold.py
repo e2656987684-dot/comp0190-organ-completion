@@ -259,15 +259,6 @@ def main():
     ap.add_argument("--dry-run", action="store_true", help="只打印计划，不训练")
     ap.add_argument("--list", action="store_true", help="只打印四格配置，和 KFOLD.md 对照用")
     ap.add_argument("--strict", action="store_true", help="软警告也中止")
-    # ⚠️ 上限，不是预算。train_skullfix 的默认是 600，而 patience 从 20 提到 30 之后
-    #    run 会跑得更久 —— cd_only_f0 在 546 轮时仍在创新低，眼看要撞 600。
-    #    撞上限的 run 是**不可引用**的（还在下降时被截断），只能作废重跑。
-    # ⭐ 提高上限对**没有触到它**的 run 完全没有影响（fit 只是循环上界，
-    #    ReduceLROnPlateau 是看平台而非按表衰减，warmup 按步数），所以中途调高是安全的
-    #    —— 与 patience 不同，那个改了就是另一个实验。
-    ap.add_argument("--epochs", type=int, default=1200,
-                    help="--epochs 上限（默认 1200，高于 train_skullfix 自己的 600）。"
-                         "只是天花板：没触到它的 run 行为逐位不变，所以中途调高不影响可比性")
     ap.add_argument("--min-free-gb", type=float, default=2.5,
                     help="每一轮开跑前要求的最小剩余磁盘（一个 best.h5 是 0.72 GB）")
     ap.add_argument("--clean-partial", action="store_true",
@@ -299,15 +290,6 @@ def main():
         # --all 按折走：任何时候停下来都有完整可比的整折
         configs = list(CONFIGS)
         plan = [(f, c) for f in args.folds for c in configs]
-    # ⚠️ 先看有没有训练在跑。正在写的目录会被 state() 认成 "partial"，
-    #    而 --clean-partial 会把**正在训练的权重**删掉。这个必须在任何判断之前拦住。
-    running = subprocess.run(["pgrep", "-af", "train_skullfix.py --run-name"],
-                             capture_output=True, text=True).stdout.strip()
-    if running:
-        sys.exit("⛔ 已经有训练在跑，先等它结束（或 kill 掉）再来：\n"
-                 + "".join(f"     {l}\n" for l in running.splitlines()) +
-                 "   ⚠️ 尤其别在这时候用 --clean-partial —— 它会删掉正在训练的权重。")
-
     partial = [f"{c}_f{f}" for f, c in plan if state(f"{c}_f{f}") == "partial"]
     if partial and args.clean_partial:
         for n in partial:
@@ -355,8 +337,7 @@ def main():
                      f"\n   已完成的 run 都已存档，腾出空间后重跑本命令即可续上。")
 
         cmd = [PY, os.path.join("src", "models", "train_skullfix.py"),
-               "--run-name", name, "--n-folds", str(N_FOLDS), "--fold", str(f),
-               "--epochs", str(args.epochs)] + CONFIGS[c]
+               "--run-name", name, "--n-folds", str(N_FOLDS), "--fold", str(f)] + CONFIGS[c]
         el = time.time() - t0
         eta = f"，按已用时估计还要 {el / (i - 1) * (len(todo) - i + 1) / 3600:.1f}h" if i > 1 else ""
         print(f"\n{'='*78}\n[{i}/{len(todo)}] {name}   已用 {el/3600:.1f}h{eta}\n"
