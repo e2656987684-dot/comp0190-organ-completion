@@ -264,6 +264,7 @@ src/models/msn_skullfix.py       重写版网络 + 损失 + 指标（训练本�
 src/models/msn_demo_arch.py      原 demo 架构逐字复制（只用来跑作者的预训练权重）
                                  ⚠️ 两者权重不兼容，别混；加载失败是静默的
 src/models/train_skullfix.py     训练 CLI（--from-run / --overwrite / --defect-every ...）
+src/models/run_kfold.py          ⭐ k 折驱动：20 个顺序跑，可断点续，撞上限/磁盘不足即中止
 src/eval/report.py               Run / eval_runs / epoch_matched / paired_stats / fig_*
                                  k 折折间聚合：fold_frame / fold_summary / fold_paired
 src/eval/mesh_viz.py             mesh 重建 + surface_stats（⚠️ 重建只能看，不能算指标）

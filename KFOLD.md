@@ -5,6 +5,44 @@
 
 ---
 
+## 两种跑法：自动 / 手动
+
+### ⭐ A. 自动（推荐）—— 一条命令跑完 20 个
+
+```bash
+tmux new -s kfold                              # 20 小时，断线不丢
+cd /root/comp0190-organ-completion
+PY=/root/miniconda3/envs/comp0190-msn/bin/python
+
+$PY src/models/run_kfold.py --dry-run           # 先看它打算干什么
+$PY src/models/run_kfold.py --folds 0           # ⭐ 先只跑 fold 0 的四格（约 4 小时）
+$PY src/models/run_kfold.py                     # 对完账再放开跑剩下 16 个
+```
+
+⚠️ **建议分两步**：fold 0 就是现在这 20 颗验证颅骨，跑完能和已知的单折数字对账 ——
+这是整轮里**唯一一次**能验证"跑法没错"的机会。对完再投入剩下 16 小时。
+
+它比裸的 `for` 循环多做五件事，每一件都对应一个真实的失败方式：
+
+| | 为什么 |
+|---|---|
+| **撞 `--epochs` 上限就中止** | 那种 run 是**不可引用**的（还在下降时被截断）。裸循环会接着跑，你 16 小时后才发现 |
+| **每轮开跑前查磁盘** | 20 个权重要 14 GB，现有 19.5 GB。中途撑爆会让后面的 run 死得像训练 bug |
+| **已完成的自动跳过** | 断了、崩了，**重跑同一条命令就续上**，而且不会和 `guard_out_dir` 打架 |
+| **每轮跑完自动自检 + 存档** | 否则这件事要手做 20 次，凌晨三点那次一定会跳过 |
+| **软警告只记不停** | LR 衰减 <5 次、末 30 轮 std ≥0.02、val/train ≥1.25 都是"读数当心"，不是坏 run。全部汇总在末尾。想严格就加 `--strict` |
+
+日志按轮写进 `experiments/kfold_logs/<run>.log`。
+⚠️ 四格配置以这个脚本为准，`--list` 打印出来可以和下面的手动清单对照
+（**已机器核对过两边完全一致**）。
+
+### B. 手动一条条 —— 下面 20 条
+
+想在 notebook 里跑、或者只补跑其中某一个时用。**两种跑法产出的 run 完全一样**，
+可以混着来（自动脚本会跳过你手动跑完的）。
+
+---
+
 ## ⬅️ 要改的就是这三行
 
 训练从 [`notebooks/MSN_train_skullfix.ipynb`](notebooks/MSN_train_skullfix.ipynb)

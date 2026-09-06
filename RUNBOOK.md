@@ -43,7 +43,18 @@ bash sync_workspace.sh backup
 
 ### k 折（4 配置 × 5 折 = 20 个，约 17~20 小时）🎮
 
-**20 条命令全在 [`KFOLD.md`](KFOLD.md)** —— 带编号、标了每条是 2×2 里的哪一格、
+**一条命令跑完 20 个**（推荐先只跑 fold 0 对账）：
+
+```bash
+tmux new -s kfold
+$PY src/models/run_kfold.py --dry-run     # 看计划
+$PY src/models/run_kfold.py --folds 0     # 先跑 fold 0 的四格，和已知单折数字对账
+$PY src/models/run_kfold.py               # 再放开跑剩下的；已完成的自动跳过
+```
+
+它会在撞 `--epochs` 上限或磁盘不足时**中止**，每轮自动自检+存档，断了重跑同一条就续上。
+
+**手动一条条跑（含 notebook 控制面板写法）全在 [`KFOLD.md`](KFOLD.md)** —— 带编号、标了每条是 2×2 里的哪一格、
 验证哪 20 颗颅骨，还有每跑完一个的自检与存档命令、进度表、已知的坑。
 ⚠️ **命令只在那份文件里写一份**，这里不重复。
 
