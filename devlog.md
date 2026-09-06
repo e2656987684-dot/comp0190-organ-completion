@@ -4256,6 +4256,49 @@ patience=20  同一条曲线模拟在 502 轮停                   20 折约 12 
 故不动**，记在这里备查。
 
 
+## 2026-09-06（第六条）（交接：k 折进行中；整理项目文件的分析落盘）📎 **素材，不是决定**
+
+⏳ **状态**：`cd_only` 五折进行中（f0/f1/f2 已完成，250~275 轮、patience=20、
+best_val_CD_t 6.455 / 6.479 / 6.310），f3 在跑。用户将在训练同时整理项目文件。
+
+### 一、⚠️ 训练跑着的时候的禁区（实测，已写进 KFOLD.md）
+
+`run_kfold` **把每一折作为新的子进程启动**，所以**改代码不影响当前折、但会影响下一折**
+—— 那样五折就不是同一个实验。正在跑的进程只打开了 `data/cache/*.npz` 和自己的
+`history.csv`；`train_skullfix` 只 `import msn_skullfix`，**完全不碰 `src/eval/`**。
+
+⛔ `src/models/` · `data/` · `experiments/` · `defect_mask_labels.npz` · 任何要 GPU 的脚本
+✅ `src/eval/` 整个目录 · 所有 `.md` · notebook · git 操作
+⚠️ **移动比编辑更危险**：`run_kfold` 按相对路径调 `src/models/train_skullfix.py`。
+
+### 二、`src/eval/` 其实是五类东西混在一起（19 个文件 / 5310 行）
+
+下次整理时不用重新推导：
+
+| 类别 | 文件 | 特点 |
+|---|---|---|
+| **可复用模块**（被 import） | `report.py`(927) `mesh_viz.py`(434) | 一直会改 |
+| **流水线** | `recompute_eval_all` `make_defect_labels` `eval_pretrained_baseline` | k 折后要重跑 |
+| **一次性研究**（结论已定） | `sampling_floor` `normal_quality` `roughness` `attention_collapse` `defect_mask_audit` `defect_mask_switch` `point_to_surface` `fold_text_branch` | 大多不用重跑，一个脚本 ≈ 论文里一条结论 |
+| **看图** | `mesh_preview` | |
+| **交付** | `make_report_figures` `make_report_deck` `make_progress_deck` | |
+
+一个可能的布局（**素材，未拍板**）：`src/eval/` 只留被 import 的模块，
+一次性研究进 `src/studies/`，出图进 `src/figures/`。
+
+⚠️ **三个必须先解决的障碍**，否则移完就散架：
+① **交叉 import**：`defect_mask_audit` → `normal_quality` → `point_to_surface` → `report`，
+   而它们靠各脚本里的 `sys.path.insert` 才能互相找到；
+② 四个 README + `CLAUDE.md` + `RUNBOOK.md` 里**写死了路径**；
+③ 硬规矩 18：**编辑器会把移动过的文件写回老路径**（`git mv` 之后 VS Code 重存过一份旧版）。
+
+### 三、还没做的两件（不挡 k 折）
+
+- `MSN_compare_runs.ipynb` 的 **k 折读表一节**还没写；第 1 节那条 assert 会先拦下
+  （故意的）。`fold_frame` / `fold_summary` / `fold_paired` 已就位，可先用脚本读。
+- `.git` 1.9 GB（历史里的大 notebook）。要缩得重写全部历史，论文交完再说。
+
+
 ## 📎 补充记录（2026-08-07）— 讨论所得，**不构成待办**
 
 > 以下是训练间隙的讨论笔记，包含**对先前记录的一处更正**、**一处可复现性问题**，
