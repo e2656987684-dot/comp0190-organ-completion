@@ -160,6 +160,39 @@ def archive(name, quiet=False):
     return True
 
 
+def drop_redundant_last(name):
+    """删掉与 best.h5 逐字节相同的 last.h5。⚠️ 不同就保留，绝不盲删。
+
+    `train_skullfix` 每轮结束都写 last.h5，而 `EarlyStopping(restore_best_weights=True)`
+    让 fit() 返回时模型里装的已经是最优轮的权重 —— 于是两个文件恒等（8/24 实测 13 个
+    run 的 md5 全部相同）。不删的话 20 折要占 28.6 GB 而不是 14.3 GB，**盘会在第
+    16~17 个爆掉**。
+
+    保留 last.h5 唯一的价值是"训练被 --minutes / --epochs 截断时能拿到最后状态"，
+    而那种 run 本来就要作废（driver 遇到撞上限会直接中止）。所以：md5 相同才删。
+    """
+    d = os.path.join(REPO, OUT_SUB, name)
+    last = os.path.join(d, "last.h5")
+    best = os.path.join(d, "best.h5")
+    if not os.path.exists(last) or not os.path.exists(best):
+        return
+    import hashlib
+
+    def md5(p):
+        h = hashlib.md5()
+        with open(p, "rb") as fh:
+            for chunk in iter(lambda: fh.read(1 << 22), b""):
+                h.update(chunk)
+        return h.hexdigest()
+
+    if md5(last) == md5(best):
+        n = os.path.getsize(last)
+        os.remove(last)
+        print(f"  删掉冗余的 last.h5（与 best.h5 md5 相同，省 {n/1e9:.2f} GB）")
+    else:
+        print("  ⚠️ last.h5 与 best.h5 不同 —— 保留。这通常意味着这一轮不是自行早停的")
+
+
 def backup():
     """rsync 到 /workspace。⚠️ /root 是临时盘，重部署会清空 experiments/。"""
     t = time.time()
@@ -283,7 +316,9 @@ def main():
     skip = len(plan) - len(todo)
 
     print(f"计划 {len(plan)} 个；已完成跳过 {skip} 个；本次要跑 {len(todo)} 个")
-    print(f"磁盘剩余 {free_gb():.1f} GB（每个权重 0.72 GB，本次约需 {0.72*len(todo):.1f} GB）\n")
+    print(f"磁盘剩余 {free_gb():.1f} GB；本次约需 {0.72*len(todo):.1f} GB"
+          f"（每轮留 0.72 GB 的 best.h5；训练结束瞬间会多一个同样大的 last.h5，"
+          f"确认 md5 相同后立刻删掉）\n")
     for i, (f, c) in enumerate(plan, 1):
         name = f"{c}_f{f}"
         mark = {"done": "✓ 已完成", "partial": "⚠ 半成品", "new": "  待跑   "}[state(name)]
@@ -328,6 +363,7 @@ def main():
             sys.exit(f"\n⛔ {hard}\n   前面已完成的 run 都已存档，修好后重跑本命令会自动续上。")
         if warn and args.strict:
             sys.exit("\n⛔ --strict：出现警告即中止。")
+        drop_redundant_last(name)      # 先删，备份就少传一半
         archive(name, quiet=True)
         print(f"  已存档 -> experiments_log/{name}/")
         if not args.no_backup:

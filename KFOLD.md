@@ -128,7 +128,9 @@ EXTRA_FLAGS = ["--n-folds", "5", "--fold", "0", "--loss", "cd"]   # 决定"这�
 
 - [ ] **Restart notebook 的 kernel** —— 一个 187M 模型占 15.5 / 24 GiB
 - [ ] `nvidia-smi --query-gpu=memory.used --format=csv` → 应该接近 0
-- [ ] `df -h /root` → 现在 19 G 空闲，**20 个权重约需 14 G**。够但不宽裕
+- [ ] `df -h /root` → **清理后 23.9 G 空闲，20 个权重需 14.3 G，跑完剩约 9 G** ✅
+      ⚠️ 那 14.3 G 的前提是**驱动脚本每轮跑完删掉冗余的 `last.h5`**（它与 `best.h5`
+      逐字节相同）。不删的话是 **28.6 G，会在第 16~17 个 run 上撑爆**
 - [ ] `bash sync_workspace.sh backup` —— `/root` 是临时盘
 
 ⚠️ **用终端跑的话强烈建议开 tmux**（`tmux new -s kfold`），20 小时里 VSCode 一断线
