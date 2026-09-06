@@ -56,6 +56,26 @@ $PY src/models/run_kfold.py --list              # 四个模型分别是什么
 日志按轮写进 `experiments/kfold_logs/<run>.log`。
 ⚠️ 四格配置以这个脚本为准（`--list`），**已机器核对过与下面的手动清单完全一致**。
 
+### ⚠️ 训练跑着的时候，哪些文件能动、哪些不能
+
+`run_kfold` **把每一折作为新的子进程启动**（`[python, "src/models/train_skullfix.py", ...]`），
+所以**改代码不会影响正在跑的那一折，但会影响下一折** —— 那样五折就不是同一个实验了。
+
+实测正在跑的进程只打开了两个文件：`data/cache/skullfix_pairs_4096_6144.npz`
+和它自己的 `history.csv`；`train_skullfix` 只 import `msn_skullfix`，**完全不碰 `src/eval/`**。
+
+| | 能不能动 |
+|---|---|
+| ⛔ `src/models/train_skullfix.py` · `msn_skullfix.py` | **不能**。下一折会用改后的版本 → 五折不可比 |
+| ⛔ `data/cache/*.npz` · `bert_skull.npy` | **不能**。正在被读 |
+| ⛔ `experiments/` · `experiments_log/defect_mask_labels.npz` | **不能**。正在写 / 每 10 轮要读 |
+| ⛔ 任何要 GPU 的脚本 | **不能跑**。一个 187M 模型 15.5/24 GiB，会 OOM 或抢显存 |
+| ✅ **`src/eval/` 整个目录** | **随便动** —— 训练从不 import 它 |
+| ✅ 所有 `.md`、notebook、`git` 操作 | 随便动 |
+
+⚠️ **移动文件比编辑更危险**：`run_kfold` 按**相对路径**调用 `src/models/train_skullfix.py`，
+移走它下一折直接起不来。
+
 ### tmux 三条命令（只需记这些）
 
 `tmux` 是系统自带的工具（`/usr/bin/tmux`，不是本项目的东西，也不是 Python 包）。
