@@ -28,10 +28,12 @@ WHAT THIS IS FOR
 
   ⚠️ `--truth-step` is a DISPLAY decimation of the truth surface (marching cubes
   step_size), not of the data. Measured on skull_070, whole four-panel file:
-      step 1  2,327,456 faces/panel   unusable (~63 MB for that panel alone)
-      step 2    574,620   0.95 mm     64 MB   sluggish over a remote link
-      step 3    251,738   1.42 mm     39 MB   default
-      step 4    138,646   1.90 mm     31 MB   lightest
+      step 1  2,327,456 faces/panel   0.475 mm   slow to render, no visible gain
+      step 2    574,620              0.95 mm
+      step 3    251,738              1.42 mm   default
+      step 4    138,646              1.90 mm   lightest
+  (Those MB figures used to matter when the output was HTML; with PNG they do
+  not -- the file is ~1 MB either way and only render time changes.)
   Even step 4 resolves 2.1x finer than the 4.03 mm the ground-truth points are
   spaced at, so the point of the figure survives any of these; the default is
   the one that is comfortable to open.
@@ -54,19 +56,23 @@ WHY `--res` IS EXPOSED AND THE OTHER KNOBS ARE NOT
   surface look smooth. So `--res 160` is still an honest view of the same
   reconstruction, while `--preset heavy` is a different reconstruction.
 
-WHY AN HTML FILE AND NOT A NOTEBOOK CELL
-  Measured on skull_083: three panels serialise to ~26 MB at res=128 and ~40 MB
-  at res=160. Inline, that goes into the .ipynb and into git. The training
-  notebook already carries a comment about a 60 MB output incident from exactly
-  this. A file is opened once and thrown away; reports/preview/ is gitignored.
+OUTPUT: PNG BY DEFAULT, HTML ONLY IF YOU ASK
+  ⚠️ This wrote HTML only until 2026-09-06, which was a bad default: the file is
+  20-40 MB, VS Code cannot preview it, and on a remote pod there is no browser to
+  open it in. PNG is ~1 MB, opens natively in the editor, and is what a thesis
+  figure has to be anyway. Measured on skull_070, four panels: 38 MB HTML vs
+  1.24 MB PNG of the identical figure.
 
-  Sizes and times measured on this machine (skull_083, three panels):
-      --res  96    ~17 MB    ~2 s      lighter, good enough to see the shape
-      --res 128    ~26 MB    ~3 s      the locked RECON value (default)
-      --res 160    ~40 MB    ~5 s      finest; slowest to open in a browser
+  `--html` additionally writes the interactive version, which is worth it when
+  you want to rotate the skull -- the panels share one camera, so dragging one
+  turns all of them.
+
+  Sizes no longer constrain --res or --truth-step for PNG output; they only cost
+  render time (roughly res^3 for the distance field, a second or two per panel).
 
     python src/eval/mesh_preview.py                        # best run, its first val skull
     python src/eval/mesh_preview.py --skull 070 --truth    # + the two raw volumes
+    python src/eval/mesh_preview.py --skull 070 --html     # also the rotatable version
     python src/eval/mesh_preview.py --skull 053 --res 160  # the outlier, finest grid
     python src/eval/mesh_preview.py --preset heavy         # ⚠️ exploration only
 
@@ -161,8 +167,13 @@ def main():
     ap.add_argument("--camera", default="defect", choices=["defect", "default"],
                     help="defect（默认）= 正对缺损，看得见洞；default = reports/ 里"
                          "既有图用的那个视角，⚠️ 它与缺损方向近乎正交，看不见洞。")
+    ap.add_argument("--html", action="store_true",
+                    help="also write the interactive HTML (20-40 MB). Worth it to rotate "
+                         "the skull -- all panels share one camera. ⚠️ VS Code cannot "
+                         "preview a file that size; you need a real browser.")
     ap.add_argument("--out", default=None,
-                    help="output .html (default reports/preview/<run>_<skull>.html)")
+                    help="output path WITHOUT extension "
+                         "(default reports/preview/<run>_<skull>)")
     ap.add_argument("--device", default="/GPU:0")
     args = ap.parse_args()
 
@@ -255,11 +266,21 @@ def main():
     fig = mv.fig_meshes(items, f"skull_{sid} — {run.label} — res={res}, {note}",
                         height=600, camera=args.camera)
 
-    out = args.out or os.path.join(REPO, "reports", "preview", f"{run.label}_{sid}.html")
-    os.makedirs(os.path.dirname(out), exist_ok=True)
-    fig.write_html(out, include_plotlyjs=True)      # 内嵌 plotly.js，离线也能开
-    print(f"\n-> {os.path.relpath(out, REPO)}   ({os.path.getsize(out) / 1e6:.1f} MB)")
-    print("   浏览器打开，可以拖动旋转。三格共用一个相机。")
+    stem = args.out or os.path.join(REPO, "reports", "preview", f"{run.label}_{sid}")
+    stem = os.path.splitext(stem)[0]
+    os.makedirs(os.path.dirname(stem), exist_ok=True)
+
+    # PNG 是默认：VSCode 能直接打开，而且论文图本来就得是它。
+    # 宽度按格数给，否则四格会被压扁。
+    png = stem + ".png"
+    fig.write_image(png, width=max(1200, 600 * len(items)), height=700, scale=2)
+    print(f"\n-> {os.path.relpath(png, REPO)}   ({os.path.getsize(png) / 1e6:.2f} MB)"
+          f"   ← 在编辑器里直接打开")
+    if args.html:
+        html = stem + ".html"
+        fig.write_html(html, include_plotlyjs=True)   # 内嵌 plotly.js，离线也能开
+        print(f"-> {os.path.relpath(html, REPO)}   ({os.path.getsize(html) / 1e6:.1f} MB)"
+              f"   ← 要拖动旋转才用它，⚠️ 需要真正的浏览器，VSCode 预览不了")
     print("   ⚠️ 只能看，不能算指标（重建把原始点外扩中位 5.3mm，和模型自己的 CD_t 同量级）。")
     print("   ⚠️ 输入那格应该看得见洞，补全那格应该没有 —— 重建**不**用 Poisson，"
           "正因为 Poisson 会把洞补掉。")
