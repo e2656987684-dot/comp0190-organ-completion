@@ -81,11 +81,27 @@ N_FOLDS = 5
 OUT_SUB = os.path.join("experiments", "msn_skullfix")
 
 
-def done(name):
-    """A run counts as finished only if BOTH its weights and its record exist."""
+def state(name):
+    """'done' | 'partial' | 'new'  —— 恢复逻辑全靠这个区分。
+
+    run.json 只在训练**结束时**写，而 ModelCheckpoint / CSVLogger 从第 1 轮就开始写。
+    所以一次被打断的训练留下的是「有 best.h5、没有 run.json」——
+    而 guard_out_dir 会（正确地）拒绝在它上面重跑。这个函数把那种目录单独认出来，
+    否则续跑时拿到的是一句看不懂的 "拒绝启动"。
+    """
     d = os.path.join(REPO, OUT_SUB, name)
-    return (os.path.exists(os.path.join(d, "best.h5"))
-            and os.path.exists(os.path.join(d, "run.json")))
+    has_w = os.path.exists(os.path.join(d, "best.h5"))
+    has_m = os.path.exists(os.path.join(d, "run.json"))
+    if has_w and has_m:
+        return "done"
+    if any(os.path.exists(os.path.join(d, f))
+           for f in ("best.h5", "last.h5", "history.csv", "run.json")):
+        return "partial"
+    return "new"
+
+
+def done(name):
+    return state(name) == "done"
 
 
 def self_check(name):
@@ -127,11 +143,32 @@ def self_check(name):
     return hard, warn, line
 
 
-def archive(name):
+def archive(name, quiet=False):
+    """把 run.json + history.csv 复制进 experiments_log/（跟踪进 git 的那份）。
+
+    ⚠️ 幂等，而且**跳过已完成的 run 时也要调一次**：训练结束（run.json 已写）到
+    存档之间如果断掉，`state()` 会判成 'done' 而永远跳过它，那条记录就再也进不了 git。
+    """
     dst = os.path.join(REPO, "experiments_log", name)
+    if all(os.path.exists(os.path.join(dst, f)) for f in ("run.json", "history.csv")):
+        return False
     os.makedirs(dst, exist_ok=True)
     for f in ("run.json", "history.csv"):
         shutil.copy2(os.path.join(REPO, OUT_SUB, name, f), os.path.join(dst, f))
+    if not quiet:
+        print(f"  补存档 -> experiments_log/{name}/（上次跑完没存上）")
+    return True
+
+
+def backup():
+    """rsync 到 /workspace。⚠️ /root 是临时盘，重部署会清空 experiments/。"""
+    t = time.time()
+    r = subprocess.run(["bash", "sync_workspace.sh", "backup"], cwd=REPO,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+    if r.returncode:
+        print(f"  ⚠️ 备份失败（不中止训练）: {r.stderr.strip()[:120]}")
+    else:
+        print(f"  已备份到 /workspace（{time.time() - t:.0f}s）")
 
 
 def summarise_model(cfg, names):
@@ -191,6 +228,12 @@ def main():
     ap.add_argument("--strict", action="store_true", help="软警告也中止")
     ap.add_argument("--min-free-gb", type=float, default=2.5,
                     help="每一轮开跑前要求的最小剩余磁盘（一个 best.h5 是 0.72 GB）")
+    ap.add_argument("--clean-partial", action="store_true",
+                    help="删掉被中断的半成品目录后重跑那一轮。⚠️ 删的是权重，单向操作；"
+                         "只对「有 best.h5 但没有 run.json」的目录生效")
+    ap.add_argument("--no-backup", action="store_true",
+                    help="每轮跑完不 rsync 到 /workspace。⚠️ /root 是临时盘，"
+                         "重部署会把 experiments/ 清空")
     ap.add_argument("--log-dir", default=os.path.join(REPO, "experiments", "kfold_logs"))
     args = ap.parse_args()
 
@@ -214,6 +257,28 @@ def main():
         # --all 按折走：任何时候停下来都有完整可比的整折
         configs = list(CONFIGS)
         plan = [(f, c) for f in args.folds for c in configs]
+    partial = [f"{c}_f{f}" for f, c in plan if state(f"{c}_f{f}") == "partial"]
+    if partial and args.clean_partial:
+        for n in partial:
+            shutil.rmtree(os.path.join(REPO, OUT_SUB, n))
+            print(f"已删除中断的半成品目录: {n}")
+        partial = []
+    elif partial:
+        sys.exit(
+            "⛔ 这些目录是**被中断的半成品**（有权重但没有 run.json，说明训练没跑完）：\n"
+            + "".join(f"     {n}\n" for n in partial) +
+            "   train_skullfix 的 guard_out_dir 会拒绝在它们上面重跑（这是对的：\n"
+            "   ModelCheckpoint 从第 1 轮就覆盖 best.h5，而 run.json 只在结束时写，\n"
+            "   混在一起会让记录和权重描述两次不同的训练）。\n\n"
+            "   半成品的权重没有任何用处（不完整、也没有对应的记录），删掉重跑即可：\n"
+            "     python src/models/run_kfold.py " + " ".join(sys.argv[1:]) + " --clean-partial")
+
+    # ⚠️ 已完成但没存上档的，先补 —— 训练结束到存档之间断掉的话，
+    #    它会被判成 done 而永远跳过，那条记录就再也进不了 git。
+    for f, c in plan:
+        if done(f"{c}_f{f}"):
+            archive(f"{c}_f{f}")
+
     todo = [(f, c) for f, c in plan if not done(f"{c}_f{f}")]
     skip = len(plan) - len(todo)
 
@@ -221,7 +286,7 @@ def main():
     print(f"磁盘剩余 {free_gb():.1f} GB（每个权重 0.72 GB，本次约需 {0.72*len(todo):.1f} GB）\n")
     for i, (f, c) in enumerate(plan, 1):
         name = f"{c}_f{f}"
-        mark = "✓ 已完成" if done(name) else "  待跑   "
+        mark = {"done": "✓ 已完成", "partial": "⚠ 半成品", "new": "  待跑   "}[state(name)]
         print(f"  {i:2d}/{len(plan)}  {mark}  {name:22} "
               f"{' '.join(['--n-folds', str(N_FOLDS), '--fold', str(f)] + CONFIGS[c])}")
     if args.dry_run or not todo:
@@ -263,8 +328,10 @@ def main():
             sys.exit(f"\n⛔ {hard}\n   前面已完成的 run 都已存档，修好后重跑本命令会自动续上。")
         if warn and args.strict:
             sys.exit("\n⛔ --strict：出现警告即中止。")
-        archive(name)
+        archive(name, quiet=True)
         print(f"  已存档 -> experiments_log/{name}/")
+        if not args.no_backup:
+            backup()
 
     print(f"\n{'='*78}\n✅ {len(todo)} 个全部完成，用时 {(time.time()-t0)/3600:.1f}h")
     if all_warn:
