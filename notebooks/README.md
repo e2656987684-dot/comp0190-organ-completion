@@ -9,9 +9,9 @@
 | [`explore_skull.ipynb`](explore_skull.ipynb) | 最早的数据探索 + 已废弃的 `.ply` 批转换 | 只作历史参考，数据管线以 `src/data/prepare_skullfix.py` 为准 |
 | [`demo/`](demo/) | 原作者的 vendor demo（推理 / 训练），**已被上面几个取代** | 只在查证"原实现到底怎么写的"时打开 |
 
-## 三条硬规则
+## 四条硬规则
 
-（第 3 条太长，单独一节放在下面。）
+（第 3、4 条太长，单独成节放在下面。）
 
 **1. 训练和评估不能在同一个 kernel 里。** 训练子进程要 15.5 GiB / 24 GiB；
 `MSN_compare_runs` / `MSN_surface_quality` 一旦建了模型就占住显存。
@@ -19,6 +19,23 @@
 
 **2. 改过 `src/eval/report.py` 或 `src/eval/mesh_viz.py` 之后**，notebook 里要
 `importlib.reload(rp)` 或重启 kernel，否则拿到的是缓存的旧模块。
+
+## 硬规则 4：这些 notebook 必须**从第 1 节开始按顺序跑**
+
+不是洁癖，是结构决定的：**第 1 节把 `src/eval` / `src/models` 加进 `sys.path`**
+（这几个模块不在包路径上），**第 2 节跑推理产生 `preds`**。跳过它们直接点后面的 cell，
+拿到的是 `ModuleNotFoundError: No module named 'mesh_preview'` ——
+**那不是缺依赖，是没按顺序跑。**
+
+VSCode 里用顶部的 **Run All**，或者先跑第 1、2 节。
+`MSN_surface_quality.ipynb` 第 4 节之后的几个 cell 已经加了前置检查，
+冷启动时会直接告诉你缺的是哪个变量、该先跑哪一节。
+
+⚠️ **编辑器里的黄色波浪线是另一回事**：Pylance 不执行 `sys.path.insert`，所以会把
+`mesh_viz` / `report` / `mesh_preview` / `msn_skullfix` 标成"无法解析"。
+`.vscode/settings.json` 里的 `python.analysis.extraPaths` 已经把这个消掉了。
+
+---
 
 ## 硬规则 3：大图不要连输出一起提交
 

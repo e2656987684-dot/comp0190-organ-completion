@@ -1,0 +1,12 @@
+{
+  // 这几个模块靠各脚本/notebook 里的 sys.path.insert 才能 import。Pylance 不执行
+  // 那行代码，所以没有这份配置时它会把 `import mesh_viz` / `report` / `mesh_preview`
+  // / `msn_skullfix` 全标成黄色波浪线 —— 看起来像缺依赖，其实运行时完全正常。
+  "python.analysis.extraPaths": ["src/eval", "src/models", "src/data"],
+  "python.defaultInterpreterPath": "/root/miniconda3/envs/comp0190-msn/bin/python",
+
+  // notebook 的大图输出别跟着提交（硬规则 3，见 notebooks/README.md）。
+  // ⚠️ 这只是提醒，VSCode 不会自动清 —— 清之前先看图里画的是谁：
+  //    权重已删的 run（baseline / dcd_l2）的图再也生成不出来。
+  "notebook.output.textLineLimit": 60
+}
