@@ -9,7 +9,9 @@
 | [`explore_skull.ipynb`](explore_skull.ipynb) | 最早的数据探索 + 已废弃的 `.ply` 批转换 | 只作历史参考，数据管线以 `src/data/prepare_skullfix.py` 为准 |
 | [`demo/`](demo/) | 原作者的 vendor demo（推理 / 训练），**已被上面几个取代** | 只在查证"原实现到底怎么写的"时打开 |
 
-## 两条硬规则
+## 三条硬规则
+
+（第 3 条太长，单独一节放在下面。）
 
 **1. 训练和评估不能在同一个 kernel 里。** 训练子进程要 15.5 GiB / 24 GiB；
 `MSN_compare_runs` / `MSN_surface_quality` 一旦建了模型就占住显存。
@@ -17,6 +19,56 @@
 
 **2. 改过 `src/eval/report.py` 或 `src/eval/mesh_viz.py` 之后**，notebook 里要
 `importlib.reload(rp)` 或重启 kernel，否则拿到的是缓存的旧模块。
+
+## 硬规则 3：大图不要连输出一起提交
+
+`.ipynb` 里的图**不是链接，是整张图塞在文件里**（plotly 是一大坨 JSON）。重跑一次输出
+整个变一遍，git 存不了差异，只能整份再存一遍。实测代价：
+
+```
+explore_skull.ipynb        一张 marching-cubes 图 = 72.8 MB，提交过 6 次 ≈ 425 MB
+MSN_surface_quality.ipynb  13~32 MB，提交过 13 次
+.git 因此涨到 1.8 GB —— 每次 clone 都要下这些
+```
+
+**约定**：要长期留的图走 `reports/`，不走 `.ipynb`。notebook 里的图是「跑完看一眼」，
+提交前清掉：
+
+```bash
+$PY -c "
+import json,sys
+p=sys.argv[1]; nb=json.load(open(p))
+for c in nb['cells']: c['outputs']=[]; c['execution_count']=None
+json.dump(nb,open(p,'w'),ensure_ascii=False,indent=1); open(p,'a').write('\n')" notebooks/<名字>.ipynb
+```
+
+### ⛔ 但清之前必须看一眼里面画的是谁
+
+**有些图再也生成不出来。** 训练在 GPU 上不可逐位复现，权重删了就没了 ——
+`MSN_surface_quality.ipynb` 的 cell 10/11 里就有 `baseline` 的密度图和诊断图，
+而它的权重 2026-08-24 已删。**那两张和 `surface_quality.csv` 里 `baseline` 那一行是同一性质的东西，
+清掉等于永久销毁。**
+
+判断规则：**图里出现的 run，权重还在不在 `experiments/`？**
+
+```bash
+ls experiments/msn_skullfix/          # 还有权重的 run
+$PY -c "
+import json,sys
+nb=json.load(open(sys.argv[1]))
+for i,c in enumerate(nb['cells']):
+    for o in c.get('outputs',[]):
+        d=o.get('data',{}).get('application/vnd.plotly.v1+json')
+        if d:
+            lay=d.get('layout',{}); t=lay.get('title',{})
+            print(i, (t.get('text') if isinstance(t,dict) else t),
+                  [a.get('text') for a in lay.get('annotations',[]) if a.get('text')])" notebooks/<名字>.ipynb
+```
+
+⚠️ 已经提交过的旧版本**不会因为清了当前文件而消失** —— git 只往里加。真要把 `.git`
+缩回去得重写全部历史（`git filter-repo`）再强制推送，那是论文交完之后再考虑的事。
+
+---
 
 ## 一次完整的实验流程
 
