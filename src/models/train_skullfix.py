@@ -62,12 +62,30 @@ Added once data grew from 50 to 100 skulls (see devlog 2026-08-05):
 
 Added 2026-08-25, all three from the same finding (see devlog):
 
-  --early-stop-patience 20 -> 30.  Across the nine valid runs, five survived a
-      mid-run gap of 15-20 epochs without a new val_loss record and then
-      improved again -- patience=20 was 1-5 epochs from killing them early, and
-      which side of that line a run lands on is a lottery worth up to 0.15 mm
-      (tie_qk stopped at 411 epochs, its repeat at 246). Runs whose longest
-      mid-run gap is under 15 just wait 10 more epochs, about two minutes.
+  --early-stop-patience 20 -> 30 -> BACK TO 20 (2026-09-06).  The 08-25 finding
+      stands and is not withdrawn: across the nine valid runs, five survived a
+      mid-run gap of 15-20 epochs without a new val_loss record and then improved
+      again -- patience=20 was 1-5 epochs from killing them early, and which side
+      of that line a run lands on is a lottery worth up to 0.15 mm (tie_qk stopped
+      at 411 epochs, its repeat at 246).
+
+      What changed is the cost. Measured on the first k-fold run: at patience=30
+      the run was still setting records at epoch 599 and hit the 600 ceiling,
+      which makes it unusable; the same curve under patience=20 stops at 502.
+      Across the sweep that is ~28 h against ~12 h, and the schedule does not have
+      28 h. Reverted to 20 for the k-fold, deliberately, with two things making it
+      acceptable:
+        * The 0.09 mm standard error the sweep was sized around was derived from a
+          0.15 mm training variance that ALREADY INCLUDED this lottery, so 20 buys
+          exactly the precision that was planned -- it does not degrade it.
+        * Every run in experiments_log/ used 20, so the folds stay directly
+          comparable with the single-split results rather than forming a second
+          tier.
+      ⚠️ NO RUN WAS EVER TRAINED AT 30. Verified three ways: the change landed in
+      09aad3a on 2026-08-25 00:40, the newest run.json predates it (notext_r2,
+      08-24 19:30), and not one of the 26 run.json files carries `lr_patience` or
+      `defect_every` -- fields added by that same commit. So this revert orphans
+      nothing and splits no tier.
 
   --lr-patience.  Was derived from --early-stop-patience, so raising the stop
       patience would have slowed the LR schedule too -- two changes at once, and
@@ -136,7 +154,7 @@ def parse_args():
     ap.add_argument("--lr", type=float, default=3e-4)
     ap.add_argument("--warmup-steps", type=int, default=100,
                     help="linear LR ramp; without it the first few steps spike (CD ~5 -> ~40)")
-    ap.add_argument("--early-stop-patience", type=int, default=30,
+    ap.add_argument("--early-stop-patience", type=int, default=20,
                     help="stop once val_loss hasn't improved for this many epochs (0 disables). "
                          "Raised from 20 on 2026-08-25. Measured across the nine valid runs, "
                          "five of them survived a mid-run gap of 15-20 epochs without a new "
