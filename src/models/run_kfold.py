@@ -301,7 +301,7 @@ def main():
         plan = [(f, c) for f in args.folds for c in configs]
     # ⚠️ 先看有没有训练在跑。正在写的目录会被 state() 认成 "partial"，
     #    而 --clean-partial 会把**正在训练的权重**删掉。这个必须在任何判断之前拦住。
-    running = subprocess.run(["pgrep", "-af", r"bin/python.*train_skullfix\.py --run-name"],
+    running = subprocess.run(["pgrep", "-af", "train_skullfix.py --run-name"],
                              capture_output=True, text=True).stdout.strip()
     if running:
         sys.exit("⛔ 已经有训练在跑，先等它结束（或 kill 掉）再来：\n"
