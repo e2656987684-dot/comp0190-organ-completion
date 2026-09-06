@@ -88,6 +88,7 @@ run worth keeping. Git tags mark the matching code state, e.g.
 | 文件 | 放什么 |
 |---|---|
 | **[`RUNBOOK.md`](RUNBOOK.md)** | **所有要在终端敲的命令，按「我现在要干嘛」排。** 记不住命令时看这个 |
+| **[`KFOLD.md`](KFOLD.md)** | ⭐ **k 折执行清单**：20 条训练命令、每条的自检与存档、进度表 |
 | **[`CLAUDE.md`](CLAUDE.md)** | **给 AI 助手（和新来的人）的入口。** 按什么顺序读状态、工作约定、踩过的坑、判读规矩。Claude Code 每次新会话自动加载它 |
 | **[`TODO.md`](TODO.md)** | **接下来做什么。** 追加式：每完成一项另起一节写日期、重列完整清单，**最后一节永远是当前有效的** |
 | [`devlog.md`](devlog.md) | 做过什么、为什么、量到了什么。按日期追加 |

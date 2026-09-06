@@ -43,21 +43,12 @@ bash sync_workspace.sh backup
 
 ### k 折（4 配置 × 5 折 = 20 个，约 17~20 小时）🎮
 
-```bash
-# fold 0 —— 换 fold 时把 _f0 和 --fold 0 一起改
-$PY src/models/train_skullfix.py --run-name cd_only_f0       --n-folds 5 --fold 0 --loss cd
-$PY src/models/train_skullfix.py --run-name lr_fix_only_f0   --n-folds 5 --fold 0 --loss cd_dcd --dcd-lambda 2
-$PY src/models/train_skullfix.py --run-name rep_w05_f0       --n-folds 5 --fold 0 --loss cd_dcd --dcd-lambda 2 --repulsion-weight 0.5
-$PY src/models/train_skullfix.py --run-name cd_rep05_full_f0 --n-folds 5 --fold 0 --loss cd --repulsion-weight 0.5
-```
+**20 条命令全在 [`KFOLD.md`](KFOLD.md)** —— 带编号、标了每条是 2×2 里的哪一格、
+验证哪 20 颗颅骨，还有每跑完一个的自检与存档命令、进度表、已知的坑。
+⚠️ **命令只在那份文件里写一份**，这里不重复。
 
-- **按折走，不按配置走** —— 任何时候停下来都有完整可比的整折
-- ⭐ **fold 0 就是现在这 20 颗验证颅骨**（实测 `val_ids` 完全相同），头四个可以和现有单折数字对账
-- ⛔ **别用 `--from-run`**：它会照抄老 run 的 `patience=20` / `epochs=500` / `n_folds=0`
-- ⚠️ `--run-name` 必须是 `<config>_f<fold>`，`report.fold_frame` 会拿它和 `run.json` 核对
-- ⚠️ `--dcd-lambda 2` 必须显式传（默认是 1，而现有两个 DCD 格用的是 2）
-- 每跑完一个：训练 notebook 第 4 节自检 → 第 5 节存档到 `experiments_log/`
-- 磁盘：20 × 716 MB ≈ 14 GB
+开跑前三条：在 `tmux` 里跑（断线不丢）· Restart notebook 的 kernel（显存）·
+`bash sync_workspace.sh backup`（`/root` 是临时盘）。
 
 ---
 
