@@ -10,7 +10,7 @@
 ### ⭐ A. 自动（推荐）—— **一个模型跑完它的 5 折，你手动切下一个**
 
 ```bash
-tmux new -s kfold                              # 断线不丢
+tmux new -s kfold                              # 断线不丢，见下面「tmux 三条命令」
 cd /root/comp0190-organ-completion
 PY=/root/miniconda3/envs/comp0190-msn/bin/python
 
@@ -55,6 +55,24 @@ $PY src/models/run_kfold.py --list              # 四个模型分别是什么
 
 日志按轮写进 `experiments/kfold_logs/<run>.log`。
 ⚠️ 四格配置以这个脚本为准（`--list`），**已机器核对过与下面的手动清单完全一致**。
+
+### tmux 三条命令（只需记这些）
+
+`tmux` 是系统自带的工具（`/usr/bin/tmux`，不是本项目的东西，也不是 Python 包）。
+它的作用只有一个：**让终端里的程序活在服务器上，而不是活在你的连接里。**
+VSCode 一刷新 / 网一断，普通终端里的训练就被杀掉；tmux 里的不会。
+
+```bash
+tmux new -s kfold        # ① 建一个叫 kfold 的会话（整轮 k 折只建这一次）
+                         #    然后在里面正常敲命令即可
+# 按 Ctrl+B 松开，再按 D  # ② 离开（训练继续跑）
+tmux attach -t kfold     # ③ 回来看进度
+```
+
+**切换模型不用重开 tmux** —— 就在同一个会话里接着敲下一条 `run_kfold.py <模型>`。
+`tmux ls` 看有哪些会话；全部跑完在里面 `exit` 关掉它。
+
+⚠️ 不用 tmux 也能跑，只是 VSCode 一断线就丢一轮（约 50 分钟）。
 
 ### ⚠️ 断了怎么恢复
 
