@@ -27,9 +27,28 @@ HARD FAILURES ABORT, SOFT ONES WARN AND CONTINUE
   it saves; those are read-with-care signals, not broken runs. Every warning is
   repeated in the summary at the end. --strict turns them into aborts.
 
-    python src/models/run_kfold.py --dry-run     # 先看它打算干什么
-    python src/models/run_kfold.py               # 全部 20 个，约 17~20 小时
-    python src/models/run_kfold.py --folds 0     # 只跑 fold 0 的四格（推荐先跑这个）
+ONE MODEL AT A TIME, FIVE FOLDS EACH -- THAT IS THE DEFAULT
+    python src/models/run_kfold.py cd_only        # 这一个模型的 5 折，约 4~5 小时
+    python src/models/run_kfold.py lr_fix_only    # 跑完上一个，手动切下一个
+    python src/models/run_kfold.py rep_w05
+    python src/models/run_kfold.py cd_rep05_full
+
+  Five folds of one configuration finish together, so `fold_frame` +
+  `fold_summary` read that model's mean +- std the moment it is done -- verified:
+  they accept a single configuration, and only `fold_paired` (which compares two)
+  needs a second model. So you can look at each model, and run inference on it,
+  before committing the next five hours.
+
+  ⚠️ THE TRADE-OFF, STATED HONESTLY. Going config-major means that until the
+  SECOND model finishes there is nothing to compare against -- the 2x2 is the
+  point of this sweep, and it does not exist yet. Fold-major (`--all`) gives the
+  opposite: stop after any fold and all four cells are comparable at that fold,
+  but no model is finished. Neither is wrong; config-major is the default because
+  the per-model checkpoint is what makes a 20-hour job reviewable.
+
+    python src/models/run_kfold.py --all         # 全部 20 个，按折走（fold-major）
+    python src/models/run_kfold.py cd_only --folds 0 1   # 只补跑某几折
+    python src/models/run_kfold.py --dry-run cd_only     # 先看它打算干什么
     python src/models/run_kfold.py --list        # 只打印四格配置
 
   ⚠️ Needs the GPU: restart the notebook kernel first (one 187M model is
@@ -115,6 +134,46 @@ def archive(name):
         shutil.copy2(os.path.join(REPO, OUT_SUB, name, f), os.path.join(dst, f))
 
 
+def summarise_model(cfg, names):
+    """一个模型五折都跑完之后的小结 —— 让 20 小时的活变成可以中途验收的。"""
+    import numpy as np
+    import pandas as pd
+
+    print(f"\n{'='*78}\n模型 `{cfg}` 五折完成\n{'='*78}")
+    print(f"{'run':22}{'轮数':>6}{'最优':>6}{'LR降':>6}{'末30std':>10}{'best_val_CD_t':>15}")
+    vals = []
+    for n in names:
+        m = json.load(open(os.path.join(REPO, OUT_SUB, n, "run.json")))
+        h = pd.read_csv(os.path.join(REPO, OUT_SUB, n, "history.csv"))
+        best = int(h["val_loss"].idxmin()) + 1
+        drops = sum(1 for i in range(1, len(h)) if h["lr"][i] < h["lr"][i - 1] - 1e-12)
+        std = float((h["val_cd_t_metric"] * m["scale_mm"]).tail(30).std())
+        v = m["best_val_cd_t_mm"]
+        vals.append(v)
+        print(f"{n:22}{len(h):>6}{best:>6}{drops:>6}{std:>10.4f}{v:>15.3f}")
+    a = np.array(vals)
+    print(f"{'五折 均值 ± std':22}{'':>28}{a.mean():>10.3f} ± {a.std(ddof=1):.3f}")
+
+    print(f"""
+⚠️ 上面那列是 `run.json` 口径的 CD_t（训练期、数据集平均 scale、全程最优），
+   比论文用的逐颅骨口径**系统性低约 0.09mm**，而且 **CD_t 根本不是主指标** ——
+   它只能看趋势，判断这五折跑得正不正常。**论文引 `eval_all_runs.csv`。**
+
+▶ 看这个模型的**主指标**（缺损区覆盖）—— 要 GPU，约 5~7 分钟，先 Restart notebook kernel：
+
+  $PY -c "
+  import os, sys; sys.path.insert(0, 'src/eval'); import report as rp
+  R = os.path.abspath('.')
+  runs = rp.load_runs(R, [f'msn_skullfix/{cfg}_f{{f}}' for f in range({N_FOLDS})])
+  fdf = rp.fold_frame(rp.eval_runs(R, runs), runs)
+  print(rp.fold_summary(fdf).to_string())"
+
+▶ 看一眼它补出来的形状：
+  $PY src/eval/mesh_preview.py --run {cfg}_f0 --skull 070 --truth
+
+▶ 跨模型比较（2×2）要等第二个模型跑完 —— `fold_paired` 需要两个配置。""")
+
+
 def free_gb():
     return shutil.disk_usage(REPO).free / 1e9
 
@@ -122,9 +181,11 @@ def free_gb():
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("model", nargs="?", choices=list(CONFIGS),
+                    help="要跑的模型；一次跑它的 5 折。不给就必须显式 --all")
+    ap.add_argument("--all", action="store_true",
+                    help="一口气跑全部 20 个，且**按折走**（每跑完一折，四格都可比）")
     ap.add_argument("--folds", type=int, nargs="+", default=list(range(N_FOLDS)))
-    ap.add_argument("--configs", nargs="+", default=list(CONFIGS),
-                    choices=list(CONFIGS))
     ap.add_argument("--dry-run", action="store_true", help="只打印计划，不训练")
     ap.add_argument("--list", action="store_true", help="只打印四格配置，和 KFOLD.md 对照用")
     ap.add_argument("--strict", action="store_true", help="软警告也中止")
@@ -139,8 +200,20 @@ def main():
             print(f"  {k:16} {' '.join(v)}")
         return
 
-    # 按折走，不按配置走：任何时候停下来都有完整可比的整折
-    plan = [(f, c) for f in args.folds for c in args.configs]
+    if not args.model and not args.all:
+        sys.exit("请指定一个模型（一次跑它的 5 折），或用 --all 跑全部 20 个：\n"
+                 "  python src/models/run_kfold.py cd_only\n"
+                 "  python src/models/run_kfold.py --list      # 看四个模型分别是什么")
+    if args.model and args.all:
+        sys.exit("--all 和指定模型二选一")
+
+    if args.model:
+        # 按配置走：这一个模型的 5 折一次跑完，跑完就能看它自己的均值±std
+        configs, plan = [args.model], [(f, args.model) for f in args.folds]
+    else:
+        # --all 按折走：任何时候停下来都有完整可比的整折
+        configs = list(CONFIGS)
+        plan = [(f, c) for f in args.folds for c in configs]
     todo = [(f, c) for f, c in plan if not done(f"{c}_f{f}")]
     skip = len(plan) - len(todo)
 
@@ -198,7 +271,12 @@ def main():
         print(f"\n⚠️ 共 {len(all_warn)} 条警告（不影响可用性，但读数时要当心）：")
         for w in all_warn:
             print("   -", w)
-    print("\n下一步见 KFOLD.md 的「20 个全部跑完之后」。")
+
+    for c in configs:
+        names = [f"{c}_f{f}" for f in args.folds]
+        if all(done(n) for n in names):
+            summarise_model(c, names)
+    print("\n完整的下一步见 KFOLD.md。")
 
 
 if __name__ == "__main__":

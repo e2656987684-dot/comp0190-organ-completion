@@ -7,34 +7,54 @@
 
 ## 两种跑法：自动 / 手动
 
-### ⭐ A. 自动（推荐）—— 一条命令跑完 20 个
+### ⭐ A. 自动（推荐）—— **一个模型跑完它的 5 折，你手动切下一个**
 
 ```bash
-tmux new -s kfold                              # 20 小时，断线不丢
+tmux new -s kfold                              # 断线不丢
 cd /root/comp0190-organ-completion
 PY=/root/miniconda3/envs/comp0190-msn/bin/python
 
-$PY src/models/run_kfold.py --dry-run           # 先看它打算干什么
-$PY src/models/run_kfold.py --folds 0           # ⭐ 先只跑 fold 0 的四格（约 4 小时）
-$PY src/models/run_kfold.py                     # 对完账再放开跑剩下 16 个
+$PY src/models/run_kfold.py --dry-run cd_only   # 先看它打算干什么
+$PY src/models/run_kfold.py cd_only             # ← 这个模型的 5 折，约 4~5 小时
+# 跑完看结果 / 跑 inference，满意了再切下一个：
+$PY src/models/run_kfold.py lr_fix_only
+$PY src/models/run_kfold.py rep_w05
+$PY src/models/run_kfold.py cd_rep05_full
 ```
 
-⚠️ **建议分两步**：fold 0 就是现在这 20 颗验证颅骨，跑完能和已知的单折数字对账 ——
-这是整轮里**唯一一次**能验证"跑法没错"的机会。对完再投入剩下 16 小时。
+**每个模型跑完，脚本自己打印五折小结**（逐折轮数/停止原因/LR降/末30std/CD_t + 均值±std），
+并给出下一步两条命令：看主指标、看补出来的形状。
+
+⚠️ 那张小结里的 CD_t 是 `run.json` 口径（训练期、全程最优），比论文口径**系统性低约
+0.09mm**，而且 **CD_t 不是主指标** —— 它只用来判断这五折跑得正不正常。
+**主指标（缺损区覆盖）要跑 inference**，命令脚本会打印。
+
+⭐ **一个模型跑完就能读它自己的均值±std** —— 已验证 `fold_frame` / `fold_summary`
+接受单个配置；只有 `fold_paired`（跨模型比较）需要第二个模型。
+
+⚠️ **代价说清楚**：按模型走，意味着**第二个模型跑完之前没有任何可比对象** ——
+2×2 才是这轮的目的，而那时它还不存在。反过来 `--all` 是按折走：任何一折跑完，
+四格都可比，但没有一个模型是完整的。**两种都不错**，默认按模型走，
+是因为"每 5 小时有一个可验收的中间结果"对 20 小时的活更重要。
+
+```bash
+$PY src/models/run_kfold.py --all               # 想按折走就用这个
+$PY src/models/run_kfold.py cd_only --folds 0 1 # 只补跑某几折
+$PY src/models/run_kfold.py --list              # 四个模型分别是什么
+```
 
 它比裸的 `for` 循环多做五件事，每一件都对应一个真实的失败方式：
 
 | | 为什么 |
 |---|---|
-| **撞 `--epochs` 上限就中止** | 那种 run 是**不可引用**的（还在下降时被截断）。裸循环会接着跑，你 16 小时后才发现 |
-| **每轮开跑前查磁盘** | 20 个权重要 14 GB，现有 19.5 GB。中途撑爆会让后面的 run 死得像训练 bug |
-| **已完成的自动跳过** | 断了、崩了，**重跑同一条命令就续上**，而且不会和 `guard_out_dir` 打架 |
+| **撞 `--epochs` 上限就中止** | 那种 run 是**不可引用**的（还在下降时被截断）。裸循环会接着跑，你几小时后才发现 |
+| **每轮开跑前查磁盘** | 20 个权重要 14 GB，现有约 19 GB。中途撑爆会让后面的 run 死得像训练 bug |
+| **已完成的自动跳过** | 断了、崩了，**重跑同一条命令就续上**，也不会和 `guard_out_dir` 打架 |
 | **每轮跑完自动自检 + 存档** | 否则这件事要手做 20 次，凌晨三点那次一定会跳过 |
 | **软警告只记不停** | LR 衰减 <5 次、末 30 轮 std ≥0.02、val/train ≥1.25 都是"读数当心"，不是坏 run。全部汇总在末尾。想严格就加 `--strict` |
 
 日志按轮写进 `experiments/kfold_logs/<run>.log`。
-⚠️ 四格配置以这个脚本为准，`--list` 打印出来可以和下面的手动清单对照
-（**已机器核对过两边完全一致**）。
+⚠️ 四格配置以这个脚本为准（`--list`），**已机器核对过与下面的手动清单完全一致**。
 
 ### B. 手动一条条 —— 下面 20 条
 
