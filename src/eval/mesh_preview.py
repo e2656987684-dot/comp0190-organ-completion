@@ -144,7 +144,7 @@ def truth_meshes(sid, raw_root, step):
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--run", default="cd_rep05_full",
+    ap.add_argument("--run", default="cd_rep05_full_f0",
                     help="run directory under experiments/ ('msn_skullfix/' is added if "
                          "you give a bare name). Default is the best configuration.")
     ap.add_argument("--skull", default=None,

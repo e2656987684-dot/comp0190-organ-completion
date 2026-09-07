@@ -118,9 +118,11 @@ COLLAPSE_FRAC = 0.99
 # The three checkpoints whose attention numbers are currently quoted from an
 # un-archived script, i.e. the ones whose weights cannot be deleted until this
 # has been run: the best configuration, the audit run, and the negative result.
-DEFAULT_RUNS = ["msn_skullfix/cd_rep05_full",
-                "msn_skullfix/tie_qk",
-                "msn_skullfix/pp_attn"]
+# tie_qk and pp_attn used to be here: they are what makes the structural-vs-
+# learned distinction visible, and their rows are frozen in
+# attention_collapse.csv. Their weights are in cold storage on /workspace, so
+# pass them explicitly after restoring if those numbers ever need recomputing.
+DEFAULT_RUNS = ["msn_skullfix/cd_rep05_full_f0"]
 
 # What the graph computes, one scalar per block per skull. `eff_frac` is NOT in
 # here: it is eff_keys/n_keys, derived after the fact in `_rows_for_run`.

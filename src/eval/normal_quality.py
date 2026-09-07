@@ -345,7 +345,7 @@ def main():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--self-test", action="store_true",
                     help="只跑合成几何的对照，不碰数据")
-    ap.add_argument("--from-run", default="msn_skullfix/cd_rep05_full",
+    ap.add_argument("--from-run", default="msn_skullfix/cd_rep05_full_f0",
                     help="取哪一轮的验证颅骨（只读 run.json，不建模型、不要 GPU）")
     ap.add_argument("--n", type=int, default=8, help="颅骨数（与 surface_quality / roughness 同批）")
     ap.add_argument("--raw-root", default=os.path.join(REPO, paths.RAW_ROOT))

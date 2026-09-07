@@ -67,7 +67,7 @@ BLOCKS = [f"D1-STA{i}" for i in range(1, 5)]
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--run", default="msn_skullfix/cd_rep05_full",
+    ap.add_argument("--run", default="msn_skullfix/cd_rep05_full_f0",
                     help="run directory under experiments/, must be a use_text=True run")
     ap.add_argument("--n", type=int, default=5, help="validation skulls to compare on")
     args = ap.parse_args()

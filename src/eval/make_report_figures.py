@@ -40,17 +40,20 @@ import pandas as pd
 # Labels match the directory names on purpose: `Run.label` defaults to the
 # basename, and a relabelled run is how the same experiment ended up in
 # eval_all_runs.csv under two names (`lr_fix` vs `lr_fix_only`).
+# Fold 0 of each 2x2 cell. Fold 0 is picked because it is fold 0, NOT because it
+# looks best -- choosing the prettiest fold would be exactly the bias the k-fold
+# was run to remove. Figures showing one model must name the fold in the caption.
 RUNS = [
-    ("cd_only", "msn_skullfix/cd_only"),
-    ("lr_fix_only", "msn_skullfix/lr_fix_only"),
-    ("rep_w05", "msn_skullfix/rep_w05"),
-    ("cd_rep05_full", "msn_skullfix/cd_rep05_full"),
+    ("cd_only_f0", "msn_skullfix/cd_only_f0"),
+    ("lr_fix_only_f0", "msn_skullfix/lr_fix_only_f0"),
+    ("rep_w05_f0", "msn_skullfix/rep_w05_f0"),
+    ("cd_rep05_full_f0", "msn_skullfix/cd_rep05_full_f0"),
 ]
 # Three panels, not four -- a fourth only makes each one narrower. These three
 # are the density argument end to end: CD alone -> DCD halves the clumping ->
 # repulsion nearly removes it. Replaces the old baseline/lr_fix/rep_w05 trio,
 # whose first panel crossed the validity boundary.
-DENSITY_RUNS = ["cd_only", "lr_fix_only", "cd_rep05_full"]
+DENSITY_RUNS = ["cd_only_f0", "lr_fix_only_f0", "cd_rep05_full_f0"]
 SHOW_SKULL = None          # None -> first validation skull
 SCALE = 2                  # PNG upscale, so text stays sharp when projected
 C_PRED = "#1565C0"
@@ -127,7 +130,11 @@ def main():
     # Problem-statement version: ground truth against the starting point only.
     # The four-panel figure already contains the fix, so using it to introduce the
     # problem gives the answer away two slides early.
-    save(mv.fig_spacing_grid([(gt[k], "ground truth"), (preds["baseline"], "baseline")],
+    # Was preds["baseline"], whose weights were pruned on 2026-08-24 -- this figure
+    # had been failing with a KeyError ever since. DENSITY_RUNS[0] is the same
+    # thing structurally: the clumpiest cell of the 2x2, i.e. the problem itself.
+    save(mv.fig_spacing_grid([(gt[k], "ground truth"),
+                              (preds[DENSITY_RUNS[0]], DENSITY_RUNS[0])],
                              s, height=430, sp_max=6.0,
                              title=f"skull_{ids[k]} — nearest-neighbour spacing "
                                    f"(dark = points sitting on top of each other)"),

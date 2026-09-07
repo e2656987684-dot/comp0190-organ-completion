@@ -79,7 +79,7 @@ def main():
                          "re-samples the vendor model's centroids, so the spread across draws is "
                          "the sampler's contribution to every reported number.")
     ap.add_argument("--n-skulls", type=int, default=0, help="0 = the whole validation split")
-    ap.add_argument("--split-from", default="cd_rep05_full",
+    ap.add_argument("--split-from", default="cd_rep05_full_f0",
                     help="run under experiments_log/ whose val_ids define the split. Every run "
                          "shares the same 20 skulls, and reading it from experiments_log rather "
                          "than experiments/ keeps this working after weights are pruned.")

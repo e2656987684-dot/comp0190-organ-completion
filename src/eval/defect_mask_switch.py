@@ -76,11 +76,26 @@ DEFECT_COLS = ["defect_gt_%", "defect_cov_mm", "defect_HD95_mm",
 # Every run whose weights still exist. `baseline` / `dcd_l2` cannot be included:
 # their checkpoints were deleted, so their defect columns can never be recomputed
 # under any definition -- which is itself one of the costs of switching.
-DEFAULT_RUNS = ["msn_skullfix/lr_fix_only", "msn_skullfix/rep_w05",
-                "msn_skullfix/cd_only", "msn_skullfix/cd_rep05_full",
-                "msn_skullfix/cd_rep05_r2", "msn_skullfix/tie_qk",
-                "msn_skullfix/tie_qk_r2", "msn_skullfix/notext",
-                "msn_skullfix/notext_r2", "msn_skullfix/pp_attn"]
+DEFAULT_RUNS = ["msn_skullfix/cd_only_f0",
+                "msn_skullfix/cd_only_f1",
+                "msn_skullfix/cd_only_f2",
+                "msn_skullfix/cd_only_f3",
+                "msn_skullfix/cd_only_f4",
+                "msn_skullfix/lr_fix_only_f0",
+                "msn_skullfix/lr_fix_only_f1",
+                "msn_skullfix/lr_fix_only_f2",
+                "msn_skullfix/lr_fix_only_f3",
+                "msn_skullfix/lr_fix_only_f4",
+                "msn_skullfix/rep_w05_f0",
+                "msn_skullfix/rep_w05_f1",
+                "msn_skullfix/rep_w05_f2",
+                "msn_skullfix/rep_w05_f3",
+                "msn_skullfix/rep_w05_f4",
+                "msn_skullfix/cd_rep05_full_f0",
+                "msn_skullfix/cd_rep05_full_f1",
+                "msn_skullfix/cd_rep05_full_f2",
+                "msn_skullfix/cd_rep05_full_f3",
+                "msn_skullfix/cd_rep05_full_f4"]
 
 
 def implant_labels(repo, sids, raw_root):

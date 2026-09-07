@@ -269,7 +269,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--self-test", action="store_true")
-    ap.add_argument("--from-run", default="msn_skullfix/cd_rep05_full",
+    ap.add_argument("--from-run", default="msn_skullfix/cd_rep05_full_f0",
                     help="取哪一轮的验证颅骨（只读 run.json，不建模型、不要 GPU）")
     ap.add_argument("--n", type=int, default=20, help="颅骨数（默认整个验证集 20 颗）")
     ap.add_argument("--out", default=OUT_CSV)

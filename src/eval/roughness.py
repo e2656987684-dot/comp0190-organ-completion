@@ -65,7 +65,7 @@ OUT_CSV = os.path.join("experiments_log", "roughness.csv")
 # large k by curvature.
 KS = (8, 16, 24, 48, 128)
 
-DEFAULT_RUNS = ["msn_skullfix/cd_rep05_full"]
+DEFAULT_RUNS = ["msn_skullfix/cd_rep05_full_f0"]
 
 
 def analyse(repo, specs, n_skulls=8, device="/GPU:0"):

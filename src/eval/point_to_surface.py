@@ -117,7 +117,7 @@ VERT_K = 4
 N_DENSE = 200_000
 
 DEFECT_MM = 5.0        # same threshold as report.DEFECT_MM
-DEFAULT_RUNS = ["msn_skullfix/cd_rep05_full"]
+DEFAULT_RUNS = ["msn_skullfix/cd_rep05_full_f0"]
 
 
 # --------------------------------------------------------------------------- #

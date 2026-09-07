@@ -63,11 +63,29 @@ DEFECT = ["defect_gt_%", "defect_cov_mm", "defect_HD95_mm", "defect_n_pred",
 # duplicate-(run, id) check because the run names genuinely differ.
 EXPECTED_LEGACY = {"baseline", "dcd_l2"}
 
-DEFAULT_RUNS = ["msn_skullfix/lr_fix_only", "msn_skullfix/rep_w05",
-                "msn_skullfix/cd_only", "msn_skullfix/cd_rep05_full",
-                "msn_skullfix/cd_rep05_r2", "msn_skullfix/tie_qk",
-                "msn_skullfix/tie_qk_r2", "msn_skullfix/notext",
-                "msn_skullfix/notext_r2", "msn_skullfix/pp_attn"]
+# The 20 k-fold runs. The ten single-split runs this used to list are superseded
+# -- their rows stay frozen in eval_all_runs.csv, and their weights moved to cold
+# storage on /workspace, so recomputing them needs those restored first.
+DEFAULT_RUNS = ["msn_skullfix/cd_only_f0",
+                "msn_skullfix/cd_only_f1",
+                "msn_skullfix/cd_only_f2",
+                "msn_skullfix/cd_only_f3",
+                "msn_skullfix/cd_only_f4",
+                "msn_skullfix/lr_fix_only_f0",
+                "msn_skullfix/lr_fix_only_f1",
+                "msn_skullfix/lr_fix_only_f2",
+                "msn_skullfix/lr_fix_only_f3",
+                "msn_skullfix/lr_fix_only_f4",
+                "msn_skullfix/rep_w05_f0",
+                "msn_skullfix/rep_w05_f1",
+                "msn_skullfix/rep_w05_f2",
+                "msn_skullfix/rep_w05_f3",
+                "msn_skullfix/rep_w05_f4",
+                "msn_skullfix/cd_rep05_full_f0",
+                "msn_skullfix/cd_rep05_full_f1",
+                "msn_skullfix/cd_rep05_full_f2",
+                "msn_skullfix/cd_rep05_full_f3",
+                "msn_skullfix/cd_rep05_full_f4"]
 
 
 def main():
