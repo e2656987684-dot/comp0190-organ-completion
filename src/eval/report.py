@@ -92,6 +92,7 @@ import paths  # noqa: E402  -- needs the sys.path line above
 RAW_ROOT = paths.RAW_ROOT
 DATA_CACHE = paths.DATA_CACHE
 BERT_CACHE = paths.BERT_CACHE
+MSN_WEIGHTS = paths.MSN_WEIGHTS
 
 
 # --------------------------------------------------------------------------- #

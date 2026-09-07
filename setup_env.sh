@@ -87,9 +87,16 @@ else
     echo "=== MSN_weights3.h5 已存在于 $WEIGHTS_FILE，跳过下载 ==="
 fi
 
-# demo notebook 用相对路径 "MSN_weights3.h5" 读权重（需要在 notebooks/demo/ 下能找到），软链过去
+# demo notebook 用相对路径 "MSN_weights3.h5" 读权重（需要在 notebooks/demo/ 下能找到），软链过去。
+# ⚠️ 用 -r 建**相对**软链。绝对软链只在这台机器的这个路径下有效：换机器、或者别人
+#    clone 到别的目录，链就指向一个不存在的地方，而且失败时看起来像「权重没下载」。
+#    相对链跟着仓库走。⚠️ 但兜底目录 /root/msn_downloads 在仓库外，那种情况只能用绝对路径。
 mkdir -p "$PROJECT_ROOT/notebooks/demo"
-ln -sf "$WEIGHTS_FILE" "$PROJECT_ROOT/notebooks/demo/MSN_weights3.h5"
+DEMO_LINK="$PROJECT_ROOT/notebooks/demo/MSN_weights3.h5"
+case "$WEIGHTS_FILE" in
+    "$PROJECT_ROOT"/*) ln -sfr "$WEIGHTS_FILE" "$DEMO_LINK" ;;   # 仓库内 -> 相对
+    *)                 ln -sf  "$WEIGHTS_FILE" "$DEMO_LINK" ;;   # 仓库外 -> 只能绝对
+esac
 
 # ---- 3. 装 miniconda（如果没有）----
 CONDA_ROOT="${CONDA_ROOT:-/root/miniconda3}"

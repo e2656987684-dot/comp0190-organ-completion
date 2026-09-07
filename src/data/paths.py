@@ -32,3 +32,9 @@ DATA_CACHE = os.path.join("data", "cache", "skullfix_pairs_4096_6144.npz")
 # The frozen BERT embedding of the word "skull". One class, so it is a constant
 # for every sample of every epoch; train_skullfix.py writes it on the first run.
 BERT_CACHE = os.path.join("data", "cache", "bert_skull.npy")
+
+# The released MedShapeNet weights, fetched by setup_env.sh from the authors' own
+# Google Drive link. Only the pretrained baseline reads them.
+# NOTE: setup_env.sh keeps its own literal copy -- it runs before Python exists,
+# so it cannot import this module.
+MSN_WEIGHTS = os.path.join("msn_downloads", "MSN_weights3.h5")

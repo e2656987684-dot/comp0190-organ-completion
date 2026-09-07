@@ -92,7 +92,7 @@ def main():
     import msn_demo_arch as demo
     import report as rp
 
-    weights = os.path.join(REPO, "msn_downloads", "MSN_weights3.h5")
+    weights = os.path.join(REPO, rp.MSN_WEIGHTS)
     data = np.load(os.path.join(REPO, rp.DATA_CACHE))
     ids, inputs, gt, scales = data["ids"], data["inputs"], data["gt"], data["scale_mm"]
     meta = json.load(open(os.path.join(REPO, "experiments_log", args.split_from, "run.json")))
