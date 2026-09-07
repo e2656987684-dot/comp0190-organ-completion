@@ -49,7 +49,7 @@ notebooks/                         see notebooks/README.md for the map and the
   ● MSN_surface_quality.ipynb      mesh reconstruction + density diagnostics
   ● MSN_baseline_pretrained.ipynb  BASELINE: author's weights on aligned data
   ● explore_skull.ipynb            first-look + the older .ply batch conversion
-  demo/                             the released implementation, kept as the
+  upstream_msn/                     the released implementation, kept as the
                                     provenance of msn_demo_arch.py. NOT verbatim
                                     upstream: dfae1cf rewired 2687 lines of the
                                     inference notebook into this project's data
@@ -114,7 +114,7 @@ run worth keeping. Git tags mark the matching code state, e.g.
 On a fresh GPU pod, `bash setup_env.sh` sets up a conda environment
 (`comp0190-msn`, see comments in that file) covering everything the current
 code needs: `notebooks/explore_skull.ipynb`, `src/data/prepare_skullfix.py`,
-and the MSN demo notebooks under `notebooks/demo/`. Dependencies are pinned in
+and the upstream MSN notebooks under `notebooks/upstream_msn/`. Dependencies are pinned in
 `requirements-msn.txt`.
 
 ## Data

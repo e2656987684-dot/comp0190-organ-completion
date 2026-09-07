@@ -6,7 +6,7 @@
 #
 # 只建一个 conda 环境：
 #   comp0190-msn    —— 覆盖全部当前代码：explore_skull.ipynb、
-#                       src/data/prepare_skullfix.py，以及 notebooks/demo/
+#                       src/data/prepare_skullfix.py，以及 notebooks/upstream_msn/
 #                       下那两个 MSN (PCT+BERT) demo notebook。
 # 曾经拆过一个额外的 comp0190（torch）环境，纯粹是为将来 torch 相关代码
 # 预留、跟 tensorflow[and-cuda] 的 nvidia-nccl 包（cu12/cu13）互相隔离用的
@@ -87,12 +87,12 @@ else
     echo "=== MSN_weights3.h5 已存在于 $WEIGHTS_FILE，跳过下载 ==="
 fi
 
-# demo notebook 用相对路径 "MSN_weights3.h5" 读权重（需要在 notebooks/demo/ 下能找到），软链过去。
+# 上游那个推理 notebook 用相对路径 "MSN_weights3.h5" 读权重（要在它自己目录下找得到），软链过去。
 # ⚠️ 用 -r 建**相对**软链。绝对软链只在这台机器的这个路径下有效：换机器、或者别人
 #    clone 到别的目录，链就指向一个不存在的地方，而且失败时看起来像「权重没下载」。
 #    相对链跟着仓库走。⚠️ 但兜底目录 /root/msn_downloads 在仓库外，那种情况只能用绝对路径。
-mkdir -p "$PROJECT_ROOT/notebooks/demo"
-DEMO_LINK="$PROJECT_ROOT/notebooks/demo/MSN_weights3.h5"
+mkdir -p "$PROJECT_ROOT/notebooks/upstream_msn"
+DEMO_LINK="$PROJECT_ROOT/notebooks/upstream_msn/MSN_weights3.h5"
 case "$WEIGHTS_FILE" in
     "$PROJECT_ROOT"/*) ln -sfr "$WEIGHTS_FILE" "$DEMO_LINK" ;;   # 仓库内 -> 相对
     *)                 ln -sf  "$WEIGHTS_FILE" "$DEMO_LINK" ;;   # 仓库外 -> 只能绝对
@@ -154,6 +154,6 @@ conda deactivate
 
 echo ""
 echo "=== 完成 ==="
-echo "MSN 权重: $WEIGHTS_FILE（已软链到 notebooks/demo/MSN_weights3.h5）"
+echo "MSN 权重: $WEIGHTS_FILE（已软链到 notebooks/upstream_msn/MSN_weights3.h5）"
 echo "所有 notebook / 脚本统一选 kernel comp0190-msn (conda)"
 echo "如果 conda 命令在新终端里还是找不到，重开一个终端或者 source ~/.bashrc 一次"

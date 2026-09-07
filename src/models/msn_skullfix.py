@@ -2,7 +2,7 @@
 MSN (PCT + text) point-cloud completion, reworked so it can actually be trained
 on one 24 GB GPU.
 
-This is a rewrite of notebooks/demo/MSN_model_training_Demo.ipynb. The layer
+This is a rewrite of notebooks/upstream_msn/MSN_model_training_Demo.ipynb. The layer
 topology is the same (LBR / offset self-attention / cross-attention decoder /
 copy-and-mapping upsampling); what changed is listed below, grouped by whether
 the change alters the maths.

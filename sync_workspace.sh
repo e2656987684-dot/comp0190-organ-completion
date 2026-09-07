@@ -56,7 +56,7 @@ EXCLUDES=(
 
 # rsync 选项说明：
 #   -a  归档模式：递归 + 保留权限/时间戳/软链接（软链接必须保留，
-#       notebooks/demo/MSN_weights3.h5 就是一个指向 msn_downloads/ 的软链）
+#       notebooks/upstream_msn/MSN_weights3.h5 就是一个指向 msn_downloads/ 的软链）
 #   -h  人类可读的大小
 #   --info=progress2  整体进度条，而不是刷屏打印每个文件
 RSYNC_OPTS=(-a -h --info=progress2 "${EXCLUDES[@]}" "${EXTRA[@]}")

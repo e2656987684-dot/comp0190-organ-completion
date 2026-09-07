@@ -1,7 +1,7 @@
 """
 Train the MSN PCT completion model from scratch on SkullFix.
 
-Replaces the `AE.fit(...)` cell of notebooks/demo/MSN_model_training_Demo.ipynb.
+Replaces the `AE.fit(...)` cell of notebooks/upstream_msn/MSN_model_training_Demo.ipynb.
 Differences from that cell, and why:
 
   lr 1e-7 -> 3e-4 (configurable).  The demo's 1e-7 with Adam is three orders of

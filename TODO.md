@@ -952,7 +952,7 @@ k 折下它从 +0.211 翻成 −0.052。而四条边里另外三条方向全部�
 | | 内容 |
 |---|---|
 | **4** | 🆕 **notebook 里 14 处写死的数据路径**（surface_quality 3 · baseline_pretrained 2 · compare_runs 2 · train_skullfix 1 · explore_skull 6）。`src/` 已收进 `paths.py`，notebook 还各写各的 |
-| **5** | **`notebooks/demo/`** —— ~~陈旧副本 `MSN_train_skullfix.ipynb`~~ ✅ 已删 · ~~散落的图片和汇报材料~~ ✅ 已删（2026-09-07：进度汇报属过程材料，不进论文，连同两个生成脚本一并清除）· ⏳ **剩下：两个 vendor notebook 的代码还没逐个看过**。⚠️ 它们**已被本项目改过**（`dfae1cf` 改了 2687 行），逐字原版是 `src/models/msn_demo_arch.py` |
+| **5** | **`notebooks/upstream_msn/`**（原 `demo/`，2026-09-07 改名） —— ~~陈旧副本 `MSN_train_skullfix.ipynb`~~ ✅ 已删 · ~~散落的图片和汇报材料~~ ✅ 已删（2026-09-07：进度汇报属过程材料，不进论文，连同两个生成脚本一并清除）· ⏳ **剩下：两个 vendor notebook 的代码还没逐个看过**。⚠️ 它们**已被本项目改过**（`dfae1cf` 改了 2687 行），逐字原版是 `src/models/msn_demo_arch.py` |
 | **6** | 🆕 **公开仓库的中文问题**：`src/` 下 17 个文件 426 行中文注释 + `setup_env.sh` 全中文，都要翻英文。⚠️ 日志类（`devlog` / `TODO` / `KFOLD` / `CLAUDE` / `experiments_log/README`）**不进公开仓库，不用翻** |
 | **7** | 🆕 **`experiments_log/` 进不进公开仓库** —— 数据（CSV）跟踪进 git，但解释它的 README 归到不公开那档。三个选项见 devlog 2026-09-07 讨论 |
 | **12** | ⏸ **体素基线做不做** —— 唯一的范围悬念。未变 |

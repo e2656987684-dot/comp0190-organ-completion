@@ -1,6 +1,6 @@
 """
 The published MSN demo architecture, lifted VERBATIM out of
-notebooks/demo/MSN_model_inference_demo.ipynb (cells 4/6/8/10/12).
+notebooks/upstream_msn/MSN_model_inference_demo.ipynb (cells 4/6/8/10/12).
 
 WHY THIS FILE EXISTS -- the weights only fit this exact topology.
 
