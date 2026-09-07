@@ -49,13 +49,20 @@ notebooks/                         see notebooks/README.md for the map and the
   ● MSN_surface_quality.ipynb      mesh reconstruction + density diagnostics
   ● MSN_baseline_pretrained.ipynb  BASELINE: author's weights on aligned data
   ● explore_skull.ipynb            first-look + the older .ply batch conversion
-  demo/
-    MSN_model_inference_demo.ipynb  original vendor demo (superseded -- its
-                                    eval re-breaks pair alignment, see the
-                                    baseline notebook's intro for the measurement)
-    MSN_model_training_Demo.ipynb   original vendor demo (superseded)
-    progress_report/                slides / figures for the progress report
+  demo/                             the released implementation, kept as the
+                                    provenance of msn_demo_arch.py. NOT verbatim
+                                    upstream: dfae1cf rewired 2687 lines of the
+                                    inference notebook into this project's data
+                                    pipeline, which is where its known-broken
+                                    pair alignment comes from. Read them; the
+                                    verbatim reference is src/models/msn_demo_arch.py
+    MSN_model_inference_demo.ipynb
+    MSN_model_training_Demo.ipynb
+    skullfix_eval_results.csv       what that notebook measured, cited by
+                                    msn_skullfix.py for the distance convention
 
+reports/                   TRACKED. paper figures (reports/figures/), generated
+                           decks, and progress_report_1/ (the hand-made first report)
 data/                      git-ignored. raw nrrd + data/cache/*.npz
 msn_downloads/             git-ignored. MSN_weights3.h5 (author's pretrained weights)
 experiments/               git-ignored. training artifacts, one dir per run

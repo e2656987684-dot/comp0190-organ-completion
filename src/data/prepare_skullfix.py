@@ -5,7 +5,7 @@ Reconstructed after the original script was lost to a machine reset (never
 committed to git -- data/ and experiments/ are gitignored on purpose, but this
 .py file should not have been). Rebuilt from what survived: the raw-data layout
 and baseline nrrd->point-cloud logic in notebooks/explore_skull.ipynb, and the
-fixes documented in notebooks/demo/MSN_train_skullfix.ipynb's "相对 demo 改了
+fixes documented in notebooks/MSN_train_skullfix.ipynb's "相对 demo 改了
 什么" section (A and E below). If you find the original script, diff it against
 this one before trusting either.
 
