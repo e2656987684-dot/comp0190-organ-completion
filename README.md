@@ -61,8 +61,8 @@ notebooks/                         see notebooks/README.md for the map and the
     skullfix_eval_results.csv       what that notebook measured, cited by
                                     msn_skullfix.py for the distance convention
 
-reports/                   TRACKED. paper figures (reports/figures/) and the
-                           generated progress decks
+reports/                   TRACKED. reports/figures/, the paper figures. Also
+                           reports/preview/, which is git-ignored scratch
 data/                      git-ignored. raw nrrd + data/cache/*.npz
 msn_downloads/             git-ignored. MSN_weights3.h5 (author's pretrained weights)
 experiments/               git-ignored. training artifacts, one dir per run

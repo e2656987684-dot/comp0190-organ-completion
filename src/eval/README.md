@@ -29,8 +29,6 @@ PY=/root/miniconda3/envs/comp0190-msn/bin/python
 | **`sampling_floor.py`** | `$PY src/eval/sampling_floor.py` | 终端 + CSV | ✅ 写 `experiments_log/sampling_floor.csv` | ❌ 纯 CPU | 约 3~4 分钟（100 颗） |
 | **`eval_pretrained_baseline.py`** | `$PY src/eval/eval_pretrained_baseline.py` | 终端 + CSV | ✅ 写 `experiments_log/pretrained_baseline/eval_val20_x5.csv`（**不动**旧的 `eval_val20.csv`） | ✅ 296.9M（含 BERT） | 十几分钟 |
 | `make_report_figures.py` | `$PY src/eval/make_report_figures.py` | `reports/figures/*.png` | ✅ 覆盖写 | ✅ | 几分钟 |
-| `make_report_deck.py` | `$PY src/eval/make_report_deck.py` | `reports/progress_report.pptx` | ✅ 覆盖写 | ❌ | 秒级 |
-| `make_progress_deck.py` | `$PY src/eval/make_progress_deck.py` | `reports/progress_report_2.pptx` | ✅ 覆盖写 | ❌ | 秒级 |
 
 ⚠️ **读任何带 `id` 列的 CSV 都要 `dtype={"id": str}`** —— 颅骨编号带前导零（`'083'`），
 pandas 默认读成整数 `83`，以 id 为键的比对会**静默落空**。本周已在三处出现过。
