@@ -47,6 +47,9 @@ import sys
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(REPO, "src", "eval"))
+sys.path.insert(0, os.path.join(REPO, "src", "data"))
+
+import paths                    # every data path is written down once
 
 import numpy as np
 import pandas as pd
@@ -59,15 +62,14 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--ids", nargs="+", default=None, help="默认：数据里全部 100 颗")
-    ap.add_argument("--raw-root", default=os.path.join(REPO, "data", "14161307",
-                                                       "SkullFix", "training_set"))
+    ap.add_argument("--raw-root", default=os.path.join(REPO, paths.RAW_ROOT))
     ap.add_argument("--out", default=OUT_NPZ)
     ap.add_argument("--force", action="store_true", help="重算已有的标签")
     args = ap.parse_args()
 
     import defect_mask_audit as dma
 
-    data = np.load(os.path.join(REPO, "data", "cache", "skullfix_pairs_4096_6144.npz"))
+    data = np.load(os.path.join(REPO, paths.DATA_CACHE))
     ids, gt, scales = data["ids"], data["gt"], data["scale_mm"]
     want = [str(s) for s in (args.ids if args.ids else ids)]
 

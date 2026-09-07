@@ -50,6 +50,9 @@ import sys
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(REPO, "src", "eval"))
+sys.path.insert(0, os.path.join(REPO, "src", "data"))
+
+import paths                    # every data path is written down once
 
 import fpsample
 import nrrd
@@ -58,7 +61,7 @@ import pandas as pd
 import trimesh
 from skimage import measure
 
-RAW = os.path.join(REPO, "data", "14161307", "SkullFix", "training_set", "complete_skull")
+RAW = os.path.join(REPO, paths.RAW_ROOT, "complete_skull")
 
 
 def load_mesh_mm(path, level=0.5):

@@ -65,6 +65,8 @@ REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 sys.path.insert(0, os.path.join(REPO, "src", "eval"))
 sys.path.insert(0, os.path.join(REPO, "src", "data"))
 
+import paths                    # every data path is written down once
+
 import numpy as np
 import pandas as pd
 from scipy.sparse import coo_matrix
@@ -213,7 +215,7 @@ def truth_for(sid, raw_root, n_dense=16384, n_out=6144, level=0.5, base_seed=42)
 
 
 def analyse(repo, sids, raw_root):
-    data = np.load(os.path.join(repo, "data", "cache", "skullfix_pairs_4096_6144.npz"))
+    data = np.load(os.path.join(repo, paths.DATA_CACHE))
     ids, gt, scales = data["ids"], data["gt"], data["scale_mm"]
 
     rows = []
@@ -346,8 +348,7 @@ def main():
     ap.add_argument("--from-run", default="msn_skullfix/cd_rep05_full",
                     help="取哪一轮的验证颅骨（只读 run.json，不建模型、不要 GPU）")
     ap.add_argument("--n", type=int, default=8, help="颅骨数（与 surface_quality / roughness 同批）")
-    ap.add_argument("--raw-root", default=os.path.join(REPO, "data", "14161307",
-                                                       "SkullFix", "training_set"))
+    ap.add_argument("--raw-root", default=os.path.join(REPO, paths.RAW_ROOT))
     ap.add_argument("--out", default=OUT_CSV)
     args = ap.parse_args()
 

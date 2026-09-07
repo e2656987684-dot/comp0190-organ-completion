@@ -209,9 +209,9 @@ def analyse(repo, specs, n_skulls=8, n_dense=N_DENSE, device="/GPU:0"):
     labels = rp.defect_labels(repo)
     data = np.load(os.path.join(repo, rp.DATA_CACHE))
     ids, inputs, gt, scales = data["ids"], data["inputs"], data["gt"], data["scale_mm"]
-    text_path = os.path.join(repo, "data", "cache", "bert_skull.npy")
+    text_path = os.path.join(repo, rp.BERT_CACHE)
     text = np.load(text_path) if os.path.exists(text_path) else None
-    raw_root = os.path.join(repo, "data", "14161307", "SkullFix", "training_set")
+    raw_root = os.path.join(repo, rp.RAW_ROOT)
 
     # ---- predictions first, one model, then release the GPU ----
     preds = {}

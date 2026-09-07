@@ -56,6 +56,9 @@ import sys
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(REPO, "src", "models"))
 sys.path.insert(0, os.path.join(REPO, "src", "eval"))
+sys.path.insert(0, os.path.join(REPO, "src", "data"))
+
+import paths                    # every data path is written down once
 os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
 
 import numpy as np
@@ -90,8 +93,7 @@ def implant_labels(repo, sids, raw_root):
     todo = [s for s in sids if s not in have]
     if todo:
         print(f"给 {len(todo)} 颗颅骨算 implant 真值标签（约 20 秒/颗，只需算这一次）…")
-        data = np.load(os.path.join(repo, "data", "cache",
-                                    "skullfix_pairs_4096_6144.npz"))
+        data = np.load(os.path.join(repo, paths.DATA_CACHE))
         ids, gt, scales = data["ids"], data["gt"], data["scale_mm"]
         for sid in todo:
             j = int(np.where(ids == sid)[0][0])
@@ -130,10 +132,10 @@ def analyse(repo, specs, n_skulls=20, device="/GPU:0"):
     import report as rp
 
     runs = rp.load_runs(repo, specs)
-    raw_root = os.path.join(repo, "data", "14161307", "SkullFix", "training_set")
+    raw_root = os.path.join(repo, paths.RAW_ROOT)
     data = np.load(os.path.join(repo, rp.DATA_CACHE))
     ids, inputs, gt, scales = data["ids"], data["inputs"], data["gt"], data["scale_mm"]
-    text_path = os.path.join(repo, "data", "cache", "bert_skull.npy")
+    text_path = os.path.join(repo, paths.BERT_CACHE)
     text = np.load(text_path) if os.path.exists(text_path) else None
 
     # Every run must share the split, because the frozen-CSV check and every

@@ -7,14 +7,14 @@ defect-region-restricted protocol.
 - **Target organ:** cranial / skull, using SkullFix's own defective/complete pairs
 - **Baseline:** the released MedShapeNet Foundation Model weights, run on this
   project's aligned data. ⚠️ *Whether a voxel baseline is also trained is still
-  undecided* -- see `src/corruption/` and the note below.
+  undecided* -- see the note below.
 
 **Scope changes (2026-08-25), both previously flagged in TODO:**
 
 - ❌ **"self-built corrupted dataset" is dropped.** SkullFix ships its own
   defective/complete pairs and those are what every result here uses;
   `src/corruption/` was never implemented and the claim was never true of the
-  work. Removed from the title rather than left as an aspiration.
+  work. Both the directory and the claim are gone rather than left as an aspiration.
 - ⏸ **"voxel baseline" is still open.** No voxel code exists. If it does get
   built, feed its binary output through `prepare_skullfix.py`'s pipeline
   (marching cubes -> dense sample -> FPS to 6144) so both sides share the
@@ -38,9 +38,7 @@ src/models/
                            Used ONLY to run the author's pretrained weights.
                            ⚠ the two model modules are NOT weight-compatible
                              with each other -- see the note in that file.
-src/corruption/            (placeholder) self-built corruption operators
 src/eval/                  (placeholder) Chamfer / Hausdorff / MSD / Dice
-configs/                   (placeholder) config files + fixed seeds
 
 notebooks/                         see notebooks/README.md for the map and the
                                    two hard rules (kernel/VRAM, module reload)
@@ -64,6 +62,17 @@ experiments/               git-ignored. training artifacts, one dir per run
 experiments_log/           TRACKED. run.json + history.csv only (small), so the
                            numbers survive even though the weights do not.
 ```
+
+### Where configuration lives
+
+There is no `configs/` directory, deliberately. Configuration sits in three
+places, and each one is where it is for a reason:
+
+| what | where | why there and not in a config file |
+|---|---|---|
+| training hyper-parameters (27 fields: loss, lr, patience, repulsion weight, the exact id split, ...) | `experiments_log/<run>/run.json` — one per run, tracked in git | so "which settings produced this number" is still answerable months later. A checked-in config file drifts away from the artifacts it produced; a `run.json` cannot, because it is written by the run |
+| network architecture (layer widths, point counts, `dec_seed`, ...) | `MSNConfig` in `src/models/msn_skullfix.py`, via `paper()` / `small()` | it has to be code: `report.Run.arch_key` reads it to decide whether a checkpoint is topology-compatible, and `load_weights` will silently accept a mismatched topology if nothing checks |
+| the k-fold experiment grid (the 2x2) | `CONFIGS` in `src/models/run_kfold.py`, printed by `--list`, mirrored in [`KFOLD.md`](KFOLD.md) | one source of truth. A second copy in YAML is a second thing that can drift |
 
 ### Two data routes (why there are two, and which to use)
 
@@ -102,4 +111,55 @@ and the MSN demo notebooks under `notebooks/demo/`. Dependencies are pinned in
 `requirements-msn.txt`.
 
 ## Data
-Data is NOT stored in this repo (see .gitignore). It lives on Google Drive / UCL HPC.
+
+`data/` is entirely gitignored, so a fresh clone has no data. Two downloads:
+
+**1. SkullFix** — [Figshare 14161307](https://figshare.com/articles/dataset/SkullFix_-_MICCAI_AutoImplant_2020_Challenge_Dataset/14161307).
+Extract under `data/` (`14161307` is the article id, and `src/data/paths.py`
+expects that name):
+
+```
+data/14161307/SkullFix/
+  training_set/{complete_skull,defective_skull,implant}/000.nrrd ... 099.nrrd
+  test_set_give_participants/            (100 volumes, unused here)
+  additional_test_set_for_participants/  (10 volumes, unused here)
+```
+
+⚠️ Every result here comes from `training_set` only — those 100 triplets are what
+gets split 80/20 or into 5 folds. `implant/` is the defect-region ground truth.
+
+Cite both, as the dataset's own readme asks:
+
+> J. Li and J. Egger. *SkullFix — MICCAI AutoImplant 2020 Challenge Dataset.* Figshare, 2021.
+>
+> O. Kodym, J. Li, et al. *SkullBreak / SkullFix.* Data in Brief 106902, 2021.
+> <https://doi.org/10.1016/j.dib.2021.106902>
+
+⚠️ SkullFix derives from CQ500 (CC BY-NC-SA 4.0). No volumes are redistributed
+here; check the Figshare terms before redistributing anything derived from them.
+
+**2. Pretrained MSN weights** — `bash setup_env.sh` fetches
+`msn_downloads/MSN_weights3.h5` (1.2 GB). Only needed for the baseline comparison.
+
+### Building the cache
+
+Training and evaluation read one 12 MB `.npz`, never the raw nrrd:
+
+```bash
+python src/data/prepare_skullfix.py --n-samples 0 --n-dense 16384 \
+    --n-in 4096 --n-out 6144 --workers 8
+```
+
+CPU only, ~5 min. `--workers 8` is a measured optimum; the job is
+memory-bandwidth bound and gets slower past 8. Output: `ids` (3-char strings, so
+leading zeros survive), `inputs` (100, 4096, 3), `gt` (100, 6144, 3), `scale_mm`.
+The step is bit-for-bit reproducible, so a lost cache rebuilds identically.
+
+`data/cache/bert_skull.npy` is the frozen BERT embedding of "skull", written on
+the first training run — one class means it is a constant for every sample.
+
+### Keeping a working copy
+
+Data, weights and `experiments/` are all gitignored, so git alone will not save
+you: `bash sync_workspace.sh backup` mirrors them to `/workspace`, `restore`
+brings them back on a fresh pod.

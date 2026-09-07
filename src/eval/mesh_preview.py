@@ -89,6 +89,9 @@ import sys
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(REPO, "src", "models"))
 sys.path.insert(0, os.path.join(REPO, "src", "eval"))
+sys.path.insert(0, os.path.join(REPO, "src", "data"))
+
+import paths                    # every data path is written down once
 os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
 
 import numpy as np
@@ -162,8 +165,7 @@ def main():
                          "Measured four-panel file size: step 2 = 64 MB (0.95 mm), "
                          "step 3 = 39 MB (1.42 mm, default), step 4 = 31 MB (1.90 mm). "
                          "All of them out-resolve the 4.03 mm point spacing.")
-    ap.add_argument("--raw-root", default=os.path.join(REPO, "data", "14161307",
-                                                       "SkullFix", "training_set"))
+    ap.add_argument("--raw-root", default=os.path.join(REPO, paths.RAW_ROOT))
     ap.add_argument("--camera", default="defect", choices=["defect", "default"],
                     help="defect（默认）= 正对缺损，看得见洞；default = reports/ 里"
                          "既有图用的那个视角，⚠️ 它与缺损方向近乎正交，看不见洞。")
@@ -221,7 +223,7 @@ def main():
     cfg = rp.arch_config(msn, run.arch_key)
     x = [inputs[k][None]]
     if cfg.use_text:
-        x.append(np.load(os.path.join(REPO, "data", "cache", "bert_skull.npy"))[None])
+        x.append(np.load(os.path.join(REPO, paths.BERT_CACHE))[None])
     with tf.device(args.device):
         model = msn.build_model(cfg)
         model.load_weights(weights)

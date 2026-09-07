@@ -73,7 +73,7 @@ def main():
     runs = rp.load_runs(REPO, RUNS)
     data = np.load(os.path.join(REPO, rp.DATA_CACHE))
     ids, inputs, gt, scales = data["ids"], data["inputs"], data["gt"], data["scale_mm"]
-    text = np.load(os.path.join(REPO, "data", "cache", "bert_skull.npy"))
+    text = np.load(os.path.join(REPO, rp.BERT_CACHE))
 
     def save(fig, name, w=1400, h=None):
         p = os.path.join(args.out, name)

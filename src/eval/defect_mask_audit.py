@@ -47,6 +47,9 @@ import sys
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(REPO, "src", "eval"))
+sys.path.insert(0, os.path.join(REPO, "src", "data"))
+
+import paths                    # every data path is written down once
 
 import numpy as np
 import pandas as pd
@@ -132,7 +135,7 @@ def label_one(repo, sid, raw_root, gt_pts, scale_mm):
 def analyse(repo, sids, raw_root):
     import normal_quality as nq
 
-    data = np.load(os.path.join(repo, "data", "cache", "skullfix_pairs_4096_6144.npz"))
+    data = np.load(os.path.join(repo, paths.DATA_CACHE))
     ids, inputs, gt, scales = data["ids"], data["inputs"], data["gt"], data["scale_mm"]
 
     rows = []
@@ -278,7 +281,7 @@ def main():
 
     import report as rp
     sids = rp.Run(REPO, args.from_run).meta["val_ids"][:args.n]
-    raw_root = os.path.join(REPO, "data", "14161307", "SkullFix", "training_set")
+    raw_root = os.path.join(REPO, paths.RAW_ROOT)
     print(f"用数据集自带的 implant 给 GT 点打真值标签（{len(sids)} 颗，每颗 4 个体数据）…")
     df = analyse(REPO, sids, raw_root)
     report(df)

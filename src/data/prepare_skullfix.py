@@ -61,8 +61,10 @@ import trimesh
 from skimage import measure
 from tqdm import tqdm
 
+import paths                    # every data path is written down once
+
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-RAW_ROOT = os.path.join(REPO_ROOT, "data", "14161307", "SkullFix", "training_set")
+RAW_ROOT = os.path.join(REPO_ROOT, paths.RAW_ROOT)
 
 
 def parse_args():
@@ -75,7 +77,7 @@ def parse_args():
     ap.add_argument("--workers", type=int, default=8)
     ap.add_argument("--level", type=float, default=0.5, help="marching-cubes iso-level for the binary mask")
     ap.add_argument("--seed", type=int, default=42)
-    ap.add_argument("--out", default=os.path.join(REPO_ROOT, "data", "cache", "skullfix_pairs_4096_6144.npz"))
+    ap.add_argument("--out", default=os.path.join(REPO_ROOT, paths.DATA_CACHE))
     return ap.parse_args()
 
 

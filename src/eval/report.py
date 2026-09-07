@@ -24,6 +24,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import sys
 
 import numpy as np
 import pandas as pd
@@ -76,12 +77,21 @@ def defect_labels(repo):
         _LABEL_CACHE[path] = {k: v for k, v in np.load(path).items()}
     return _LABEL_CACHE[path]
 
-# The one place the cache filename is written down. It was repeated verbatim in
-# four files, which is fine right up until it isn't: nothing enforces that they
-# agree, and a mismatch would silently evaluate two runs on different data. This
-# is a de-duplication, not preparation for anything -- `eval_runs` also takes an
-# explicit `data=` if a one-off needs a different file.
-DATA_CACHE = os.path.join("data", "cache", "skullfix_pairs_4096_6144.npz")
+# Data paths are defined once in src/data/paths.py and re-exported here, so the
+# `rp.DATA_CACHE` call sites that predate that file keep working unchanged.
+# They are RELATIVE to the repo root on purpose: this module never assumes where
+# the data lives -- every function takes `repo` and joins it. An absolute constant
+# would silently DISCARD the caller's repo, since os.path.join drops everything
+# before an absolute component. `eval_runs` also still takes an explicit `data=`.
+_DATA_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
+if _DATA_DIR not in sys.path:          # guarded: the notebooks reload this module
+    sys.path.insert(0, _DATA_DIR)
+import paths  # noqa: E402  -- needs the sys.path line above
+
+RAW_ROOT = paths.RAW_ROOT
+DATA_CACHE = paths.DATA_CACHE
+BERT_CACHE = paths.BERT_CACHE
 
 
 # --------------------------------------------------------------------------- #
@@ -368,7 +378,7 @@ def eval_runs(repo, runs, n_skulls=None, device="/GPU:0", data=None):
     data = np.load(data or os.path.join(repo, DATA_CACHE))
     ids, inputs, gt, scales = data["ids"], data["inputs"], data["gt"], data["scale_mm"]
     # Only needed by text-branch runs; a no-text checkout may not have cached it.
-    text_path = os.path.join(repo, "data", "cache", "bert_skull.npy")
+    text_path = os.path.join(repo, BERT_CACHE)
     text = np.load(text_path) if os.path.exists(text_path) else None
 
     # One model per ARCHITECTURE, reused across the runs that share it. Building a

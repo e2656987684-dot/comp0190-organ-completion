@@ -79,7 +79,7 @@ def analyse(repo, specs, n_skulls=8, device="/GPU:0"):
     runs = rp.load_runs(repo, specs)
     data = np.load(os.path.join(repo, rp.DATA_CACHE))
     ids, inputs, gt, scales = data["ids"], data["inputs"], data["gt"], data["scale_mm"]
-    text_path = os.path.join(repo, "data", "cache", "bert_skull.npy")
+    text_path = os.path.join(repo, rp.BERT_CACHE)
     text = np.load(text_path) if os.path.exists(text_path) else None
 
     groups = {}

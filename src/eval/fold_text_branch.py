@@ -86,7 +86,7 @@ def main():
     data = np.load(os.path.join(REPO, rp.DATA_CACHE))
     ids, inputs = data["ids"], data["inputs"]
     pos = [int(np.where(ids == s)[0][0]) for s in run.meta["val_ids"][:args.n]]
-    text = np.load(os.path.join(REPO, "data", "cache", "bert_skull.npy"))
+    text = np.load(os.path.join(REPO, rp.BERT_CACHE))
 
     # ---------------- the original, with the text branch ----------------
     model = msn.build_model(cfg)

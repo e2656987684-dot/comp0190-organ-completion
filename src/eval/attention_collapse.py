@@ -243,7 +243,7 @@ def analyse(repo, specs, n_skulls=3, device="/GPU:0"):
     runs = rp.load_runs(repo, specs)
     data = np.load(os.path.join(repo, rp.DATA_CACHE))
     ids, inputs = data["ids"], data["inputs"]
-    text_path = os.path.join(repo, "data", "cache", "bert_skull.npy")
+    text_path = os.path.join(repo, rp.BERT_CACHE)
     text = np.load(text_path) if os.path.exists(text_path) else None
 
     # One model per ARCHITECTURE, as in report.eval_runs: TF's allocator does not
