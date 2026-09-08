@@ -708,7 +708,7 @@ mkdir -p experiments_log/$RUN && cp experiments/msn_skullfix/$RUN/{run.json,hist
 3. `p2s.csv` / `attention_collapse.csv` 按最终模型重跑
 4. `bash sync_workspace.sh backup`
 
-⚠️ `MSN_compare_runs.ipynb` 第 1 节那条 assert 会拦下你（各折验证集不同，故意的）——
+⚠️ `MSN_eval_metrics.ipynb` 第 1 节那条 assert 会拦下你（各折验证集不同，故意的）——
 notebook 的 k 折读表一节还没写，先用脚本读。
 
 ---

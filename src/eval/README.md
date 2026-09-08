@@ -88,8 +88,8 @@ kernel 占着显存时这些脚本会 OOM。
 | 产物 | k 折后 | 输入口 / 怎么重跑 |
 |---|---|---|
 | `experiments_log/sampling_floor.csv` | ❌ **不用重跑** | 只依赖数据和点数，与划分/权重无关。这是唯一一个 fold-independent 的量，所以它默认跑全部 100 颗而不是某一折的 20 颗 |
-| `experiments_log/eval_all_runs.csv` | ✅ **必须** | `report.eval_runs(REPO, runs)` —— 把折的 run 传进去即可。归档走 `MSN_compare_runs.ipynb` 第 6.1 节（合并写，`SAVE=False` 先看清单）。⚠️ **`eval_runs` 不产出 `defect_def`**，写入前必须补 `"implant"`；⚠️ **run 标签必须等于目录名**，否则合并静默落空（第 1 节有断言） |
-| `experiments_log/surface_quality.csv` | ✅ **必须** | `MSN_surface_quality.ipynb` 的 `MODELS`（⚠️ 存档 cell 是合并写，不会丢旧行） |
+| `experiments_log/eval_all_runs.csv` | ✅ **必须** | `recompute_eval_all.py`（默认就是那 20 个折），它带「与掩码无关的列必须逐位不变」的断言。⚠️ **2026-09-08 起 notebook 不再有归档 cell** —— 那个 cell 只负责单折时代的增量归档，k 折整表走脚本。⚠️ `eval_runs` 不产出 `defect_def`，脚本会补 |
+| `experiments_log/surface_quality.csv` | ✅ **必须** | `MSN_eval_surface.ipynb` 第 6 节（合并写，且断言写入列必须与已有列一致；`baseline` 那行权重已删、再也算不出来）。⚠️ 队列是 `ids` 序前 8 颗，与本文件下面那条队列陷阱对应 |
 | `experiments_log/pretrained_baseline/eval_val20_x5.csv` | ✅ **每折各一次** | `eval_pretrained_baseline.py --split-from <fold run> --out <per-fold csv>`。基线必须在**和它对比的模型同一批颅骨**上评 |
 | `experiments_log/attention_collapse.csv` | ✅ **每个最终模型各一次** | `attention_collapse.py --runs <各折的 run>`。坍缩是**一组权重**的性质，与划分无关，所以结论几乎不会变；但论文引的是最终模型那一份，得从那份读。⚠️ 三套以上架构一次跑会撞显存（TF 不归还显存），分几次跑即可 —— CSV 是合并写的 |
 | `experiments_log/defect_mask_switch.csv` | ❌ 不用 | **试算，不是结论**。除非真的换口径，否则无需重跑 |
@@ -114,6 +114,7 @@ kernel 占着显存时这些脚本会 OOM。
      判据要换成「**k 折同向 且 |delta| > 2×SE**」，`fold_paired` 因此只报 `t`，不报 Wilcoxon。
    - ⚠️ **池化 100 颗**（`paired_stats(fdf.assign(run=fdf["config"]), base, other)`）是尺子②、可推广性证据；
      它的 p 对「这个配置更好」是**偏松**的（同一折的 20 颗共用一个训练出来的模型），不能当效应的显著性。
-   ⚠️ `MSN_compare_runs.ipynb` 第 1 节那条 `assert` **仍会先把你拦下来**（这是故意的）——
-   notebook 的 k 折读表一节还没写，聚合函数就位不等于 notebook 就位。
+   ✅ **2026-09-08：`MSN_eval_metrics.ipynb` 已改成 k 折读表本**，那条拦人的 `assert` 换成了
+   `fold_frame` 的八条前置检查。它默认**读 `eval_all_runs.csv`，不建模型**，所以第 1~8 节
+   在没有 GPU、没有权重、没有 `data/` 的克隆上也能跑；第 9 节才可选地重算一折做对账。
 2. **`report.epoch_matched` 仍然可用**，而且更需要 —— 各折的停止轮数同样会不一样。

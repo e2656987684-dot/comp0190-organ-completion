@@ -44,9 +44,9 @@ notebooks/                         see notebooks/README.md for the map and the
                                    two hard rules (kernel/VRAM, module reload)
   ● MSN_train_skullfix.ipynb       RUN a training. Only its section 1 changes
                                    between runs; repeats use --from-run
-  ● MSN_compare_runs.ipynb         JUDGE the results: metric glossary, epoch-
+  ● MSN_eval_metrics.ipynb         JUDGE the results: metric glossary, epoch-
                                    matched table, paired tests, main tables
-  ● MSN_surface_quality.ipynb      mesh reconstruction + density diagnostics
+  ● MSN_eval_surface.ipynb      mesh reconstruction + density diagnostics
   ● MSN_baseline_pretrained.ipynb  BASELINE: author's weights on aligned data
   ● explore_skull.ipynb            first-look + the older .ply batch conversion
   upstream_msn/                     the released implementation, kept as the

@@ -105,14 +105,31 @@ class Run:
         self.rel = rel
         self.dir = os.path.join(repo, "experiments", rel)
         self.label = label or os.path.basename(rel)
-        with open(os.path.join(self.dir, "run.json")) as f:
+        # experiments/ is gitignored and lives on the ephemeral disk; experiments_log/
+        # is tracked. Falling back to it is what lets the reading half of
+        # MSN_eval_metrics.ipynb run on a fresh clone with no weights and no GPU.
+        self.log_dir = os.path.join(repo, "experiments_log", self.label)
+        src = self.dir if os.path.exists(os.path.join(self.dir, "run.json")) else self.log_dir
+        with open(os.path.join(src, "run.json")) as f:
             self.meta = json.load(f)
-        self.hist = pd.read_csv(os.path.join(self.dir, "history.csv"))
+        self.hist = pd.read_csv(os.path.join(src, "history.csv"))
         self.scale_mm = float(self.meta["scale_mm"])
 
     @property
     def weights(self):
-        return os.path.join(self.dir, "best.h5")
+        """The checkpoint. Raises rather than handing back a path that is not there.
+
+        The ten single-split runs were moved to /workspace/cold-weights/ on
+        2026-09-07, so a missing file here usually means the run is in cold
+        storage, not that it was lost.
+        """
+        p = os.path.join(self.dir, "best.h5")
+        if not os.path.exists(p):
+            raise FileNotFoundError(
+                f"{self.label}: no checkpoint at {p}. Records are still readable from "
+                f"{self.log_dir}; weights, if this is one of the archived single-split "
+                f"runs, are under /workspace/cold-weights/{self.rel}.")
+        return p
 
     @property
     def arch_key(self):

@@ -13,7 +13,7 @@ PY=/root/miniconda3/envs/comp0190-msn/bin/python
 > 15.5 / 24 GiB，kernel 占着显存时脚本直接 OOM。下面标了 🎮 的都要。
 >
 > ⚠️ **能在 notebook 里看的就别在终端看。** 终端适合"算"，notebook 适合"读"——
-> 读 CSV、出表、配对检验、看图，全都该在 `MSN_compare_runs.ipynb` 里。
+> 读 CSV、出表、配对检验、看图，全都该在 `MSN_eval_metrics.ipynb` 里。
 > 终端只在两种情况下必需：① 训练（几十分钟，kernel 断了就没了）② 抢显存的脚本。
 
 ---
@@ -68,8 +68,11 @@ $PY src/models/run_kfold.py cd_rep05_full
 
 ## 2. 判读结果 → **在 notebook 里**
 
-[`notebooks/MSN_compare_runs.ipynb`](notebooks/MSN_compare_runs.ipynb)：第 1 节加 run →
-第 5 节同轮次表 → 第 6 节主表 → 第 7 节配对检验 → 对着第 3 节的判决清单打勾。
+[`notebooks/MSN_eval_metrics.ipynb`](notebooks/MSN_eval_metrics.ipynb)：第 4 节 2×2 折均值 →
+第 5 节四条边 → 第 6 节缺损区 vs 全点云 → 第 7 节同轮次表，对着第 3 节的判读口径读。
+
+⭐ **第 1~8 节读冻结的 `eval_all_runs.csv`，不建模型** —— 不要 GPU、不要权重、不要 `data/`。
+只有第 9 节（可选、默认关闭）会重算一折做对账。
 
 想在终端快速扫一眼各 run 的数字：
 
@@ -81,7 +84,8 @@ df = df[df.defect_def == 'implant']      # ⚠️ 排掉 5mm 旧口径的两行
 print(df.groupby('run', sort=False)[['CD_t_mm','defect_cov_mm','clump_%']].mean().round(3).to_string())"
 ```
 
-⚠️ k 折之后 `paired_stats` 不适用，改用 `fold_frame` / `fold_summary` / `fold_paired`。
+⚠️ k 折之后 `paired_stats` 不适用，改用 `fold_frame` / `fold_summary` / `fold_paired`
+（notebook 第 4~6 节已经这么做了）。
 
 ---
 
@@ -94,11 +98,12 @@ $PY src/eval/mesh_preview.py --skull 070 --truth --html       # 再多写一份�
 
 结果在 `reports/preview/<run>_<skull>.png`（gitignored，约 1 MB，编辑器直接打开）。
 
-**想自己转角度**：用 [`notebooks/MSN_surface_quality.ipynb`](notebooks/MSN_surface_quality.ipynb)
+**想自己转角度**：用 [`notebooks/MSN_eval_surface.ipynb`](notebooks/MSN_eval_surface.ipynb)
 第 4.1~4.3 节 —— 4.1 四格内联、4.2 拖动并把角度存成具名视角、4.3 出高分辨率 PNG。
 
-⚠️ 挑颅骨：`cd_rep05_full` 在 20 颗上的主指标排名 —— 好 `031/000/070`、中位 `004/033`、
-⚠️ 离群 `053`（6.769，是均值的两倍多）。**只看最好的那颗会高估。**
+⚠️ 挑颅骨：**只看最好的那颗会高估**。notebook 第 3 节会把该折的逐颅骨排名打出来，
+`SKULL = None` 默认渲染**中位那颗**（不是最好那颗）。折 0 的 `cd_rep05_full_f0` 实测：
+好 `000/031/070`（2.45~2.69）、中位 `030/039`（3.02/3.17）、⚠️ 离群 `053`（**4.77**）。
 
 ---
 

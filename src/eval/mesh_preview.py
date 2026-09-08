@@ -213,7 +213,7 @@ def main():
             print(f"skull_{sid} / {run.label}（取自 {FROZEN}，口径 {r.get('defect_def', '?')}）")
             print("  " + "  ".join(f"{c}={r[c]:.3f}" for c in SHOW_COLS if c in r))
             print("  ⚠️ 下面那张图**看不见**这些数字里最硬的那条（密度/扎堆）—— mesh 会把点的"
-                  "疏密抹平，这正是 MSN_surface_quality.ipynb 第 5 节存在的理由。\n")
+                  "疏密抹平，这正是 MSN_eval_surface.ipynb 第 5 节存在的理由。\n")
 
     import tensorflow as tf
     for g in tf.config.experimental.list_physical_devices("GPU"):
