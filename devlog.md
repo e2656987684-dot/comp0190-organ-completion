@@ -5104,3 +5104,78 @@ src/models/README.md」，而那一节**当时还不存在** —— 与第五条
 > 这一轮已经因为反过来做而造出两次断链（`prepare_skullfix` 那处、`run_kfold` 那处）。
 
 砍掉的是论证和叙事，留下的是「是什么 + 一句为什么 + 数字」。
+
+## 2026-09-08（第八条）（`src/eval/` 15 个文件翻完；`src/` 中文清零）
+
+承接第六条（`src/models/`）。用户要求：只翻中文 + 压 md，**其它一个字符不动**，
+并追加一条判据 —— **只有「我本机或我的实验中涉及到的内容」可以删减**。
+
+### 一、结果
+
+`src/` 全目录中文 **0 行**。15 个文件全部通过那条结构不变量
+（把字符串常量抹平后 AST 与 HEAD 完全一致 = 只有给人看的文本变了）：
+
+```
+15/15 IDENTICAL   ·   13 个脚本 --help 正常
+self-test 三个全过（defect_mask_audit / normal_quality / point_to_surface，0 处 FAIL）
+report + mesh_viz import 正常；2×2 折均值 3.298/3.245/3.438/3.230 一字不差
+mesh_viz.RECON 未动
+```
+
+docstring 压缩幅度最大的：`attention_collapse` 94→70、`mesh_preview` 81→51、
+`point_to_surface` 78→52、`report._defect_metrics` 60→33、`sampling_floor` 42→20。
+
+### 二、⚠️ 这个目录和 `src/models` 的性质不同，先查了才动
+
+**311 行中文里有 257 行在代码的字符串里**（models 那边主要在注释），而且几乎全是
+**不变量校验失败时的报错**。这些是本项目最要紧的一类文字 —— 它们的作用是
+「读数直接告诉你错在哪一层」，翻译时保住了信息量，没有压成 "assertion failed"。
+
+动手前核了落盘风险：**17 个入库 CSV（含 `pretrained_baseline/` 五折）表头和值中文 0 行**，
+加上没有任何代码解析这些打印 → 改字符串不影响任何结果、不用重跑。
+
+### 三、按用户那条判据的取舍
+
+**删（本机 / 本项目实验历史）**：各处 devlog 日期引用、`dtype` 陷阱的完整病史
+（五次、p2s.csv 变 16 行）、TODO 编号、「导师提出的」「2026-08-05 那次测量」之类经过。
+
+**留（技术内容）**：`roughness.py` 里**故意保留**的已作废旧值 `0.736 / 0.760`
+（它的作用就是拦住有人再引）· 队列陷阱（`ids` 序 vs `val_ids` 序只重合 1 颗）·
+`dtype={"id": str}` 的**原理**（为什么 `astype(str)` 顶不上）· `signed_deviation`
+那 27 行 ⛔ 过时说明（本来就是英文，原样保留）· `point_to_surface` 那段
+「不对称是重点、不许过度解读」。
+
+### 四、中途修的两处
+
+1. **表格错位**：`report.py` 的 `↓好` 换成 `(lower)` 后超出 16 字宽。两处字段宽度
+   改成 24，重新出表核对数字未变。
+2. ⭐ **`make_report_figures.py` 的 docstring 是过期的** —— 写着 "the **progress-report**
+   figures / **the slides** / **the deck's** figures"，而那些 deck 连同
+   `make_progress_deck.py` / `make_report_deck.py` 已在 `c600318`（2026-09-07）删除。
+   它现在是**论文插图的唯一生产者**，docstring 已改成 "the figures for the write-up"。
+
+### 五、⚠️ 用户提的问题，查证结论：`make_report_figures.py` 不能删
+
+它不是当初那两个汇报脚本。产出 7 张图进 `reports/figures/`，其中 6 张 + `pred_vs_gt.png`
++ `summary.csv` 跟踪进 git，`RUNBOOK` 第 6 节「出论文图」与 CLAUDE 第八节那句
+「重部署要重装无头 Chrome，否则论文图一张都出不来」指的都是它。
+
+顺带查出三处不一致，**未处理，等用户定**：
+① `dcd_blindspot.png` 生成了但没进 git，另外 6 张都进了；
+② `pred_vs_gt.png` 进了 git 但这个脚本不生成它（脚本自己注明是从 notebook 导出的）；
+③ 那批 PNG 当初 `git add -f` 入库的理由是「画它们的 run 权重已删、再也生不出来」，
+而 `RUNS` 已换成权重还在的 f0 四格 —— **那个理由现在没了**，继续跟踪 3.5 MB 可再生的
+PNG 变成了一个选择。
+
+### 六、`src/eval/README.md`：120 行中文 → 63 行英文
+
+用户两次要求精简：先翻成 113 行，再按「标准 README 怎么写」压到 **63 行**，
+并去掉了写死的 conda 环境名（别人的环境不叫这个）。
+
+⚠️ 砍掉的「k 折之后要重跑什么」那张表**没有删**，挪进了
+`experiments_log/README.md`（它本来就是描述这些 CSV 的地方，且不公开、保持中文）。
+`RUNBOOK.md` 与 `CLAUDE.md` 的两处指向已同步改掉。
+
+顺带修了 `KFOLD.md` 两处过时说法（它不是只追加文件）：算主表那条改成直接给
+`recompute_eval_all.py`；以及那句「`MSN_eval_metrics.ipynb` 第 1 节的 assert 会拦下你、
+k 折读表一节还没写」—— **这句现在是假的**。

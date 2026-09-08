@@ -52,11 +52,11 @@ COMP0190 硕士项目：**颅骨点云补全**（SkullFix，100 对，80 训 / 2
 | 1.6 | `KFOLD.md` | 20 折的进度表和实测数（k 折已跑完，此文件转为记录） | 2k |
 | 2 | `devlog.md` | **全读**（54 条日期条目，倒着读更快进入状态）<br>⚠️ 先看文件头那条「devlog 里一切都是待定的」 | **~80k** |
 | 3 | `experiments_log/README.md` | 全读（有效性分界、噪声判据、采样地板、各 run 定性） | 7.6k |
-| 4 | `src/eval/README.md` | 全读（脚本怎么跑 + **k 折后要重跑什么**） | 2k |
+| 4 | `src/eval/README.md` | 全读（⚠️ 2026-09-08 改成**英文、对外、精简**：两个模块 + 13 个脚本各是什么、怎么跑。<br>「哪些产物要重算」那张表已挪进 `experiments_log/README.md`） | 1k |
 | 5 | `notebooks/README.md` | 全读（六个 notebook 各是干嘛的 + 怎么跑）。⚠️ 2026-09-08 改成**英文、对外**，只讲文件用途，不装判读材料 | 1k |
 | 6 | `README.md` | 全读（对外的项目描述、范围决策） | 2k |
-| 7 | `src/models/README.md` | ⭐ 2026-09-08 新建（321 行英文）。模型和训练的**全部理由**都挪进这里了：与 demo 的差异、各 guard 为什么存在、实测数字（DCD 梯度占比表、repulsion 无量纲化、采样地板…）。<br>⚠️ 模块 docstring 已压到 20 行左右，只剩红线；`mesh_viz.py` / `report.py` 的注释块仍在原处 | 4k |
-| 8 | `experiments_log/README.md` 的最后两节 | ⭐ **指标词典 + k 折判读口径 + 可视化的硬规则**（干活时最常查的）。2026-09-08 从 notebook 挪进这里 —— notebook 只留一两句 | 4k |
+| 7 | `src/models/README.md` | ⭐ 2026-09-08 新建（175 行英文）。模型和训练的**全部理由**都挪进这里了：与 demo 的差异、各 guard 为什么存在、实测数字（DCD 梯度占比表、repulsion 无量纲化、采样地板…）。<br>⚠️ 模块 docstring 已压到 20 行左右，只剩红线；`mesh_viz.py` / `report.py` 的注释块仍在原处 | 4k |
+| 8 | `experiments_log/README.md` 的最后三节 | ⭐ **指标词典 + k 折判读口径 + 可视化的硬规则**（干活时最常查的）。2026-09-08 从 notebook 挪进这里 —— notebook 只留一两句 | 4k |
 | 9 | `devlog.md` 最后两条 | 2026-09-07/08 —— **k 折结论 + notebook 重排的全部上下文** | 3k |
 
 ### 轻量模式（约 20k token）
