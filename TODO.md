@@ -1203,3 +1203,42 @@ k 折下它从 +0.211 翻成 −0.052。而四条边里另外三条方向全部�
 - ~~`make_report_figures.py` 该不该留~~ ✅ **留**。它不是被删掉的那两个汇报脚本，是论文插图的
   唯一生产者；但 docstring 还写着是给幻灯片用的，已改
 - ~~`KFOLD.md` 两处过时说法~~ ✅ 修掉
+
+## 2026-09-08（第十六次）— 公开仓库的文件面收尾；剩下只有范围决策
+
+**触发**：README 重写完、部署脚本拆分完。**跟踪文件里除日志类外中文 0 行。**
+
+**这一批的经验**：⚠️ **判断一个改动会不会破坏某条流程，要看那条流程实际依赖什么。**
+「把 `sync_workspace.sh` 取消 git 跟踪」听起来会砸掉恢复路径，实际上恢复走的是
+`/workspace` 上的 rsync 镜像，而 rsync 不读 `.gitignore` —— git 根本不在那条链上。
+> 反过来也成立：真正的风险不在那儿，而在「这四个文件从此少了一份异地副本」。
+
+### 📌 公开仓库收尾
+
+| | 内容 |
+|---|---|
+| **7** | **`devlog` / `TODO` / `KFOLD` / `CLAUDE` / `experiments_log/README` 进不进公开仓库** —— 它们都还跟踪着，而规矩说这几个「不公开」。⚠️ **这是发布前必须拍板的一条**：要么接受它们公开（全中文），要么像 `RUNBOOK.md` 那样摘掉 |
+| **30** | 🆕 **四个摘掉的文件少了异地副本**（`RUNBOOK.md` / `sync_workspace.sh` / `setup_local.sh` / `.vscode/tasks.json`），只剩本地 + `/workspace`。要冗余就开个私有仓库 |
+| **31** | 🆕 **`setup_local.sh` 和 `PAPER.md` 还没进过 `/workspace`** —— 跑一次 `bash sync_workspace.sh backup` |
+| **8** | ⏸ `data/.../point_clouds/` 那 200 个 `.ply` 要不要删（20 MB） |
+| **9** | `notebooks/upstream_msn/` 的两个 notebook 还没逐个看代码 |
+| **12** | ⏸ 体素基线做不做 |
+| **14** | 训练配置与原实现的差异表 —— A~E 在 `notebooks/README.md` |
+| **16 / 17 / 19** | ⏸ epsilon 饿死 · 掩码审计 · 论文图相机，都是「写不写进论文」 |
+| **26** | ⚠️ `explore_skull.ipynb` 45.6 MB 且已提交，可再生、清掉零损失 |
+| **27** | `reports/figures/` 三处不一致（见 devlog 第八条第五节） |
+| **28** | ~~`setup_env.sh` 全中文~~ ✅ 完成 |
+| **29** | ~~`prepare_skullfix.py` 写死本机 conda 路径~~ ⏳ 仍在（docstring 里的示例命令） |
+
+### ⚙️ 已知但未修
+
+**20** 两条判据打架 · **21** `.git` 2.0 GB（新仓库自动解决）· **22** `surface_quality.csv`
+的 `lr_fix` 标签 · **23** `train_skullfix.py` 的路径副本 · **24** `rep_w05_f0` 末段 std
+
+### ✅ 本批完成
+
+- ~~根 `README.md`~~ ✅ 重写，开头就是结论和 5 折表格；删掉四处已成假话的说法
+- ~~`setup_env.sh`~~ ✅ 拆成公开的 117 行英文 + gitignored 的 `setup_local.sh`；⚠️ **邮箱不再进仓库**
+- ~~`requirements-msn.txt`~~ ✅ 翻译，包列表逐行核对未变
+- ~~`.gitignore` / `.vscode/settings.json`~~ ✅ 翻译，规则未变
+- ~~`RUNBOOK.md` / `sync_workspace.sh` / `.vscode/tasks.json`~~ ✅ 取消跟踪，本地保留

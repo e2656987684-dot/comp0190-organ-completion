@@ -5179,3 +5179,118 @@ PNG 变成了一个选择。
 顺带修了 `KFOLD.md` 两处过时说法（它不是只追加文件）：算主表那条改成直接给
 `recompute_eval_all.py`；以及那句「`MSN_eval_metrics.ipynb` 第 1 节的 assert 会拦下你、
 k 折读表一节还没写」—— **这句现在是假的**。
+
+## 2026-09-08（第九条）（开始写论文：建 `PAPER.md` 台账；四条边全部从冻结 CSV 复算）
+
+用户问「论文该怎么开始、第一步是什么」。**第一步不是动笔，是把可引的数字锁死** ——
+本项目的工作记录里有 18 条被推翻或撤回的说法，而 devlog 按规矩原样保留旧条目，
+照着它写论文一定会抄到作废的数。
+
+### 一、`PAPER.md` 入库
+
+七节：主线 / 章节骨架 / **主张台账**（A 评测协议 · B 损失 · C 表示边界 · D 实现审计 ·
+E 必写局限，每条带出处和强度分档）/ **作废清单 18 条** / 图表清单 / 待拍板 / 复算命令。
+
+定位：**论文数字的唯一权威来源**，与 devlog 的关系＝「结论」与「怎么得出的」。
+中文，按不公开工作文档的惯例（同 devlog / TODO / KFOLD）。
+
+### 二、复算：所有头条数字与文档一致
+
+从 `eval_all_runs.csv` + `run.json` 重跑 `fold_frame` / `fold_summary` / `fold_paired`
+（无 GPU、无权重、无 `data/`）：
+
+- 2×2 折均值 3.4376 / 3.2976 / 3.2455 / 3.2298 —— 与 README 表逐位一致
+- 四条边 −0.2078 / −0.1399 / −0.0522 / +0.0156，SE 与同向折数全部对上
+- 交互项 **+0.1556 / SE 0.0478 / t 3.26 / 5/5**；次可加 55.3%（−0.1921 / −0.3477）
+- 基线五折均值 CD_t **10.811**、缺损覆盖 **10.630**、洞里 **32.9** 点 → 3.29× vs 1.71×
+- 采样地板 4.619 / 2.310 / 3.974（100 颗）、法向翻转 49.5~53.3%
+
+⚠️ **基线的 CD_t 是 10.811 不是 10.715** —— 后者是折 0 / 单折那次的数。
+`experiments_log/README.md` 里 10.715 那张表是单折时期的，标了历史记录，但容易被顺手引走。
+
+### 三、⚠️ 一个真踩到的坑：run 名字不告诉你它是 2×2 的哪一格
+
+第一次配边我按名字直觉配成 `cd_only → rep_w05` 当「+rep」，**错了**：
+
+```
+cd_only        --loss cd                                    CD
+lr_fix_only    --loss cd_dcd --dcd-lambda 2                 CD + DCD
+rep_w05        --loss cd_dcd --dcd-lambda 2 --rep 0.5       CD + DCD + rep
+cd_rep05_full  --loss cd --rep 0.5                          CD + rep
+```
+
+`rep_w05` 是**有 DCD** 的那格，`cd_rep05_full` 才是「CD+rep」。
+**危险的地方是错配也给出一张像模像样的表**（−0.1921 / 0.0414 / 5/5），
+数量级和真值差不多，只有逐条对文档才发现四条边一条都对不上。
+> **判据只能是 `run_kfold.CONFIGS` 的 flag，不是 run 名字。** 名字里的 `rep`
+> 说明它有 repulsion，没说明它有没有 DCD。
+
+### 四、顺带记下的三处待查
+
+- `reports/figures/pred_vs_gt.png` 进了 git 但 `make_report_figures.py` 不生成它，来源不明
+- A6（协议的证伪检验，`lr_fix` 2.890 反超 `cd_rep05_full` 2.913）是**单折 + 旧掩码口径**，
+  要么按 k 折重算，要么引用时注明口径
+- `defect_gt_%` 三个口径：审计 6.18%（20 颗 implant 真值）· k 折 6.13%（`eval_all_runs`）·
+  5mm 规则 6.44%。台账统一引后两个，8/20 那个 6.70% 已列入作废清单
+
+## 2026-09-08（第九条）（README 重写；部署脚本拆成「项目的」和「这台机器的」）
+
+### 一、根 README 重写：173 行 → 164 行，但内容换了一半
+
+原来的 README **完全没说这个项目发现了什么** —— 点进来只看到目录树。现在开头就是
+5 折交叉验证的四格表 + 三条结论（repulsion 治扎堆而 DCD 因此冗余 / 是缺损区限定评测
+让这件事可见 / 报告误差里 73% 是表示不是模型），并写明**每个数字都能从本仓库重算，
+且不需要 GPU、权重、原始数据** —— 这是这个仓库真正的卖点。
+
+⚠️ 顺带删掉的都是**已经变成假话**的：
+`src/eval/ (placeholder) Chamfer / Hausdorff / MSD / Dice`（那里现在有 15 个文件）·
+「只有标 ● 的才有代码，其余是骨架占位」（占位符早删了）· 「Where things are tracked」
+那张**中文表** · `git diff baseline-7.08mm`（那个 tag 指向 ⛔ 作废轮次）·
+「Two data routes」（`.ply` 那条已被取代，不该在 README 里教人用）。
+逐文件的目录树（60 行）压成目录级，细节交给三个子 README。
+
+### 二、⚠️ `setup_env.sh` 里有两块根本不是「项目环境搭建」
+
+用户问「别人用不用得了」。查完的结论是**用得了，而且改起来很简单**，160 行里真正
+不通用的只有两块：
+
+1. 把 `~/.claude` / `~/.claude.json` 软链到 `/workspace/.claude-config` —— Claude Code
+   的会话记录，与项目零关系
+2. ⚠️ `git config --global user.email "..."` —— **这会把邮箱公开到 GitHub 上**
+
+另外三处（`CONDA_ROOT` 默认值、权重兜底目录、缓存重定向）是本机假设，一行就能改通用，
+**而且用户以 root 跑，`$HOME` 就是 `/root`，改完他那边结果一模一样**。
+
+处置：拆成 `setup_env.sh`（公开、英文、117 行）+ `setup_local.sh`（gitignored），
+前者开头 `source` 后者（存在才 source）。公开版核过：`jinyu` / `gmail` / `workspace` /
+`/root` / `claude` **零命中**。⚠️ **没有真跑这个脚本** —— 跑一遍会重装环境。
+
+### 三、按同一条规则又摘掉三个文件
+
+`sync_workspace.sh`（124 行，12 处 `/workspace`，整个前提就是这台 pod 的盘布局）·
+`RUNBOOK.md`（71 行中文的个人命令速查，写死 `/root/miniconda3`）·
+`.vscode/tasks.json`（三个任务全是调 `sync_workspace.sh`，公开后必然是坏的）。
+全部 `git rm --cached`，**文件仍在本地**。
+
+保留并翻译：`.gitignore`（注释里是真理由，核过规则逐行未变）·
+`.vscode/settings.json`（`extraPaths` 对谁都有用，去掉写死的解释器路径）·
+`requirements-msn.txt`（**包列表逐行核对完全没变**，只改注释）。
+
+**至此跟踪文件里除日志类外中文 0 行。**
+
+### 四、⭐ 用户问「部署/备份/恢复变了没有」—— 没变，而且原因值得记
+
+**恢复从来不走 git。** `sync_workspace.sh` 自己的头注释就写着从 `/workspace` 那份调用，
+而 **rsync 只排除四样东西**（`__pycache__` / `*.pyc` / `.ipynb_checkpoints` / `.DS_Store`），
+**`.gitignore` 对它完全无效**。核过 `/workspace/comp0190-organ-completion/` 是含 `.git`
+的完整镜像。所以取消跟踪不影响任何一步：`restore` 会把 `setup_local.sh` 和
+`sync_workspace.sh` 一起带回来，`setup_env.sh` 再自动 source 前者。
+
+> ⭐ **教训：判断一个改动会不会破坏恢复流程，要看那条流程实际依赖什么，不是看直觉。**
+> 「取消 git 跟踪」听起来危险，但这条链路上 git 根本不在。
+
+⚠️ 但**代价要说清**：这四个文件从此少了 GitHub 那一份异地副本，只剩本地盘 + `/workspace`。
+`RUNBOOK.md` 是 71 行攒出来的命令知识。要恢复冗余得开个私有仓库，已告知用户，未决。
+
+⚠️ 两件当时提醒用户做的：`setup_local.sh` 是新建的、`/workspace` 上还没有；
+`PAPER.md`（18.6 KB，未跟踪）同样只靠 rsync 保。**都要跑一次 backup。**
