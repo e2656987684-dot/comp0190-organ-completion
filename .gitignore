@@ -217,10 +217,10 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-# 数据与大文件，绝不上传
-# 注意：必须带开头的 /，否则这条规则会匹配任意深度的 data/ 目录（比如
-# src/data/），把该目录下本该提交的源码文件也一起忽略掉——prepare_skullfix.py
-# 上次丢失就是因为这个。
+# Data and large files, never committed.
+# The leading slash is required: without it the rule matches a data/ directory at
+# any depth, including src/data/, and silently ignores source files that belong
+# in the repository. A script was lost that way once.
 /data/
 *.stl
 *.nrrd
@@ -229,27 +229,37 @@ __marimo__/
 *.ply
 *.obj
 *.npz
-# …但缺损区真值标签必须跟着 git 走（66 KB）。它是评测的输入，而不是产物：
-# 缺损区自 2026-08-28 起由数据集的 implant 真值定义，标签就存在这里。
-# 生成它需要原始 nrrd + marching cubes，而 data/ 是 gitignored 的、/root 又是
-# 临时盘 —— 不跟踪它，就等于「原始数据一丢，历史指标全部算不出来」。
+# ...except the defect-region labels, which are tracked (66 KB). They are an
+# INPUT to evaluation rather than a product: the defect region is defined by the
+# dataset's implant ground truth, and this is where those labels live. Producing
+# them needs the raw volumes and marching cubes, and the raw data is not tracked
+# -- so without this line, losing the raw data means losing the ability to
+# recompute any historical metric.
 !experiments_log/defect_mask_labels.npz
 *.npy
 *.pth
 *.ckpt
 *.h5
 experiments/
-# 汇报用的渲染产物：PPTX 约 2MB、PNG 图约 2.3MB。规则保留（免得每次重跑生成
-# 脚本都把一堆新图带进暂存区），但**已交付的那几份是用 `git add -f` 强制入库的**。
+# Rendered figures are ignored by default, so that re-running the figure script
+# does not sweep a pile of new images into the index. The delivered ones are
+# force-added instead.
 #
-# 为什么改：这条规则原来的理由是"都能由 src/eval/make_report_figures.py 从
-# experiments/ 重新生成"。2026-08-24 按有效性分界裁剪权重之后这个前提没了 ——
-# 第一次汇报的图依赖 baseline_es20 / dcd_l2 / dcd_w3 的权重，而那三轮是 ⛔
-# 错误性实验，权重已删且训练不可复现，图再也生不出来。用 5MB 把交付物本身存进
-# git，比为了留住"可再生"而留 2.1GB 作废权重划算。
-#
-# 讲稿是手写的，一直跟踪。
+# The rule originally assumed every figure could be regenerated from the archived
+# runs. That stopped being true once checkpoints were pruned: some figures depend
+# on runs whose weights are gone, and training is not bit-reproducible, so they
+# cannot be redrawn. Storing a few megabytes of finished figures is cheaper than
+# keeping gigabytes of superseded weights to preserve the option.
 reports/figures/*.png
 reports/*.pptx
-# mesh_preview.py 的 HTML：一张 20~40 MB，是看一眼的产物，不是交付物
+# mesh_preview.py's HTML output: 20-40 MB each, something to look at rather than
+# a deliverable.
 reports/preview/
+
+# Specific to one deployment rather than to the project: personal environment
+# setup, the backup script for this machine's network disk, the command sheet
+# that goes with them, and the editor tasks that drive them.
+setup_local.sh
+sync_workspace.sh
+RUNBOOK.md
+.vscode/tasks.json
