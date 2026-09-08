@@ -980,3 +980,58 @@ k 折下它从 +0.211 翻成 −0.052。而四条边里另外三条方向全部�
 - ~~**出图脚本改指向**~~ ✅ 顺带修了一个从 8/24 就坏掉的图
 - ~~**冷权重**~~ ✅ 十个单折 run 移到 `/workspace/cold-weights/`（rsync 范围外），本地 21G→14G
 - ~~**三处被推翻的说法**~~ ✅ CLAUDE.md 第五/六节 · experiments_log/README 文件头 · compare_runs 第 2 节
+
+## 2026-09-08（第十二次）— notebook 流水线重排到一半；剩两本 + 公开仓库收尾
+
+**触发**：k 折已终审完成，实验部分结束。现在全部工作是**把仓库整理成可公开的样子** +
+写论文。用户定下 notebook 按标准机器学习流水线排。
+
+**这一批的经验**：⚠️ **不要把工具的接口拆碎了重装。**
+我把训练 notebook 拆成 20 个单元格（一折一个），理由是"这样断了能从中间继续"——
+而 `run_kfold.py <配置>` 本来就一条命令跑完五折，**且已完成的折本来就自动跳过**。
+我以为要自己实现的性质，工具早就有了。
+> **改任何东西之前，先读清楚被改的那个工具已经提供了什么。**
+
+### 🔴 优先级最高
+
+| | 内容 | 状态 |
+|---|---|---|
+| **1** | ~~k 折交叉验证~~ | ✅ 完成，结论见 CLAUDE.md 第六节 |
+| **2** | **notebook 流水线重排** | ⏳ **四本已改，剩两本**（下面第 3、4 条） |
+| **3** | **`MSN_compare_runs.ipynb`（评估·指标）** | ⏳ **待大改**。第 1 节那条 assert 仍会拦下 k 折（各折验证集不同，故意的）；`fold_frame`/`fold_summary`/`fold_paired` 已就位、第 2 节口径已按 k 折更正，**但读表 cell 还没写**。现在只能用脚本读 |
+| **4** | **`MSN_surface_quality.ipynb`（评估·补全效果可视化）** | ⏳ 待改。`MODELS` / `MESH_MODEL` 还指着单折 run（权重已移入冷存储），**现在跑不了** |
+
+### 📌 公开仓库收尾
+
+| | 内容 |
+|---|---|
+| **5** | **`src/` 下 17 个文件 426 行中文注释 + `setup_env.sh` 全中文** 要翻英文。⚠️ 日志类（`devlog`/`TODO`/`KFOLD`/`CLAUDE`/`experiments_log/README`）**不公开、不用翻** |
+| **6** | **notebook 里 14 处写死的数据路径**（surface_quality 3 · baseline 2 · compare_runs 2 · train 1 · explore 6）。`src/` 已收进 `paths.py`，notebook 还各写各的 |
+| **7** | **`experiments_log/` 进不进公开仓库** —— 数据（CSV）跟踪进 git，但解释它的 README 归到不公开那档。三个选项见 devlog 2026-09-07 |
+| **8** | ⏸ **`data/.../point_clouds/` 那 200 个 `.ply` 要不要删**（20 MB）。唯一消费者是上游推理 notebook 里**本项目接进去的**那几段，而那段评测是坏的。用户 9-07：先留着 |
+| **9** | **`notebooks/upstream_msn/` 的两个 notebook 还没逐个看代码** |
+| **12** | ⏸ 体素基线做不做 —— 唯一的范围悬念 |
+| **14** | 训练配置与原实现的差异表 —— 审计活。⭐ 训练 notebook 的附录已有 A~E 五条，可直接用 |
+| **16** | ⏸ epsilon 饿死要不要写。⚠️ k 折后有新情况：`cd_rep05_full_f0` 的 D2-STA2/3/4 也出现 94~95% query 被饿死，单折时只有 `tie_qk` 有 |
+| **17** | ⏸ 缺损区掩码的审计结果要不要写 |
+| **19** | 论文图的相机（`default` 看不见洞 vs `defect` 正对缺损）—— 未拍板 |
+
+### ⚙️ 已知但未修
+
+| | 内容 |
+|---|---|
+| **20** | ⚠️ **两条内部判据打架**：`fold_paired` 的「同向 且 >2×SE」 vs `report.py` 的「0.1mm 分辨线」。`+rep(有DCD)` 过前者不过后者。暂不放宽（k=5 时 SE 自己的 CI 跨 4.8 倍），报数时两个都写 |
+| **21** | `.git` 2.0 GB。⭐ 新仓库是全新历史，自动解决 |
+| **22** | `surface_quality.csv` 里 `lr_fix` 与目录名 `lr_fix_only` 不一致 |
+| **23** | `train_skullfix.py` 还留着自己的 `DATA_CACHE` / `BERT_CACHE` 副本（k 折期间刻意没动）。**现在可以收进 `paths.py` 了** |
+| **24** | 🆕 `rep_w05_f0` 末 30 轮 std 0.0386（>0.02 软线）。**保留** —— 去掉它会让本项目结论更好看，那是删数据最不该有的理由。训练 notebook 里写明了 |
+
+### ✅ 本批完成
+
+- ~~`explore_skull.ipynb`~~ ✅ 重写成只读的数据浏览（体数据 + 点云两种形态）
+- ~~`MSN_baseline_pretrained.ipynb`~~ ✅ 重写（原来 assert 一个已删文件、根本跑不起来），含五折逐折对比
+- ~~`MSN_train_skullfix.ipynb`~~ ✅ 重写成 k 折版，4 个训练单元格 + 20 折自检 + 曲线
+- ~~`MSN_inference.ipynb`~~ ✅ **新建**
+- ~~`notebooks/demo/`~~ ✅ 清理并改名 `upstream_msn/`
+- ~~汇报材料~~ ✅ 全删（含两个生成脚本）
+- ~~出图脚本坏了半个月~~ ✅ 修好（`density_problem.png` 引用已删的 `baseline`）

@@ -4,10 +4,12 @@ COMP0190 硕士项目：**颅骨点云补全**（SkullFix，100 对，80 训 / 2
 模型是 MedShapeNet Foundation Model（MSN = PCT + BERT 文本条件，187M 参数）的重写版。
 **当前阶段：收尾**——逐条清 TODO、把结论固化成可复现的脚本、准备写论文。
 
-> ✅ **2026-09-07：k 折跑完了**（20/20，4 配置 × 5 折，全部干净早停）。
-> **论文数字一律以 k 折为准**，判读见第五、六节，逐折数据在 [`KFOLD.md`](KFOLD.md) 的进度表。
-> ⚠️ 单折那十个 run 的权重已移到 `/workspace/cold-weights/`（在 rsync 范围外，`--delete` 碰不到）；
-> 它们的逐颅骨指标全部冻在 `experiments_log/` 的各 CSV 里，读数不需要权重。
+> **实验部分已结束。** k 折 20/20 跑完并判读（2026-09-07），论文数字一律以 k 折为准，
+> 判读见第五、六节。**现在全部工作 = 把仓库整理成可公开的样子 + 写论文。**
+>
+> 当前在做：**notebook 按机器学习流水线重排**。已改 4 本、剩 2 本，见 TODO 第十二次快照。
+> ⚠️ 单折那十个 run 的权重在 `/workspace/cold-weights/`（rsync 范围外，`--delete` 碰不到）；
+> 指标全部冻在 `experiments_log/` 的 CSV 里，**读数不需要权重**。
 
 **这个文件只做路由和立规矩，不复述内容。** 具体数字都在它指的那些文件里，
 那些文件随时在变，而这个文件不会。
@@ -46,14 +48,15 @@ COMP0190 硕士项目：**颅骨点云补全**（SkullFix，100 对，80 训 / 2
 |---|---|---|---|
 | 1 | `TODO.md` **最后一节** | 全读（当前有效清单） | 3.8k |
 | 1.5 | `RUNBOOK.md` | 全读（所有终端命令，按任务排） | 1.2k |
-| 1.6 | `KFOLD.md` | ⭐ **k 折进行中就先看这个** —— 20 条命令 + 进度表 + 每条的自检 | 2k |
+| 1.6 | `KFOLD.md` | 20 折的进度表和实测数（k 折已跑完，此文件转为记录） | 2k |
 | 2 | `devlog.md` | **全读**（54 条日期条目，倒着读更快进入状态）<br>⚠️ 先看文件头那条「devlog 里一切都是待定的」 | **~80k** |
 | 3 | `experiments_log/README.md` | 全读（有效性分界、噪声判据、采样地板、各 run 定性） | 7.6k |
 | 4 | `src/eval/README.md` | 全读（脚本怎么跑 + **k 折后要重跑什么**） | 2k |
-| 5 | `notebooks/README.md` | 全读（两个 notebook 的分工） | 1k |
+| 5 | `notebooks/README.md` | 全读（六个 notebook 的分工 + 跑 k 折时的守卫和陷阱） | 1.5k |
 | 6 | `README.md` | 全读（对外的项目描述、范围决策） | 2k |
 | 7 | 四个模块 docstring | `msn_skullfix.py`(76行) `train_skullfix.py`(85行) `mesh_viz.py`(45行) `report.py` 的「三把尺子」注释块 | 4k |
 | 8 | `MSN_compare_runs.ipynb` 的 markdown | 指标词典 + 判决标准（干活时最常查的） | 4k |
+| 9 | `devlog.md` 最后两条 | 2026-09-07/08 —— **k 折结论 + notebook 重排的全部上下文** | 3k |
 
 ### 轻量模式（约 20k token）
 
@@ -106,6 +109,16 @@ print(df.groupby('run', sort=False)[['CD_t_mm','defect_cov_mm','clump_%']].mean(
 用户实际会跑的那条命令。**（2026-09-06 连栽两次换来的。）
 
 **给用户的回答**：用中文；结论先行；数字要带出处；不确定就说不确定。
+
+### ⚠️ 文档规矩（2026-09-07/08 用户定，后续都要遵守）
+
+1. **会公开的一律英文**（代码注释、docstring、对外 `.md`）。
+   **不公开的保持中文、不用翻**：`devlog` · `TODO` · `KFOLD` · `CLAUDE` · `experiments_log/README`。
+2. **要短。** 正常代码注释的长度，不写长篇。说明性内容往 `notebooks/README.md` 挪。
+3. **少用 emoji。** 强调用加粗或 `Warning:`。
+4. ⚠️ **能自己做完的就做完，不要每次结尾抛一串「建议顺序 ①②③」给用户。**
+   收尾阶段用户要的是任务减少。决策该拍的就拍（说明理由），只在真需要他定的时候问，一次问一个。
+   例外：装依赖、动 `/workspace` 备份、范围决策（什么进公开仓库）仍要先问。
 
 ---
 
@@ -332,7 +345,14 @@ src/eval/mesh_preview.py         看一眼 mesh（默认出 PNG；--truth 加原
                                  ⚠️ 只能看不能算指标；不产出入库数字
 RUNBOOK.md                       所有终端命令，按「我现在要干嘛」排
 KFOLD.md                         ⭐ k 折执行清单：20 条命令 + 自检 + 进度表
-notebooks/MSN_train_skullfix.ipynb    发起训练（只改第 1 节控制面板）
-notebooks/MSN_compare_runs.ipynb      判读结果（指标词典、判决标准都在里面）
-notebooks/MSN_surface_quality.ipynb   mesh 可视化 + 密度诊断
+notebooks/  —— 按机器学习流水线排（预处理是脚本，不做 notebook）
+  explore_skull.ipynb            数据探索：原始体数据 + 点云缓存（只读）✅ 已重写
+  MSN_train_skullfix.ipynb       训练：4 个单元格跑完 20 折 + 自检 + 曲线 ✅ 已重写
+                                 ⭐ 第 4、5 节不用 GPU 也能跑（记录在 git 里）
+  MSN_inference.ipynb            推理：加载一折的权重补全颅骨 ✅ 新建
+  MSN_compare_runs.ipynb         评估·指标 ⏳ 待大改（k 折读表一节仍未写）
+  MSN_baseline_pretrained.ipynb  评估·对比：预训练权重 vs 本工作 ✅ 已重写
+  MSN_surface_quality.ipynb      评估·可视化 ⏳ 待改（还指着已移走的单折权重）
+  upstream_msn/                  上游那两个 notebook（原 demo/，⚠️ 已被本项目改过）
+/workspace/cold-weights/         十个单折 run 的权重，在 rsync 范围外
 ```
