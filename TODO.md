@@ -1035,3 +1035,116 @@ k 折下它从 +0.211 翻成 −0.052。而四条边里另外三条方向全部�
 - ~~`notebooks/demo/`~~ ✅ 清理并改名 `upstream_msn/`
 - ~~汇报材料~~ ✅ 全删（含两个生成脚本）
 - ~~出图脚本坏了半个月~~ ✅ 修好（`density_problem.png` 引用已删的 `baseline`）
+
+## 2026-09-08（第十三次）— notebook 流水线重排 6/6 完成；剩下全是公开仓库收尾
+
+**触发**：最后两本（`MSN_compare_runs` / `MSN_surface_quality`）改完。**动 notebook 的活到此为止。**
+
+**这一批的经验**：⚠️ **改一件基础设施，要把所有消费它的入口都走一遍。**
+9-07 把十个单折 run 的权重移进冷存储，当时只把后果记在 `MSN_surface_quality` 头上，
+实际上 `MSN_compare_runs` 第 1 节也同时死了，挂了一天没人发现。
+> 上一批的经验是「改工具之前先读清楚它已经提供了什么」，这一批是它的反面：
+> **改完之后要顺着依赖往下走一遍。**
+
+### 🔴 优先级最高
+
+| | 内容 | 状态 |
+|---|---|---|
+| **1** | ~~k 折交叉验证~~ | ✅ 完成，结论见 CLAUDE.md 第六节 |
+| **2** | ~~notebook 流水线重排~~ | ✅ **6/6 完成** |
+| **5** | **`src/` 下 17 个文件 426 行中文注释 + `setup_env.sh` 全中文** 要翻英文。⚠️ 日志类（`devlog`/`TODO`/`KFOLD`/`CLAUDE`/`experiments_log/README`）不公开、不用翻。<br>🆕 **现在有个可见的接缝**：`report.py` 的 `format_paired` / `format_fold_paired` 表头是中文，而 `MSN_compare_runs.ipynb` 已是英文 —— 一本英文 notebook 打印中文表格 | ⏳ **现在是最大的一块** |
+
+### 📌 公开仓库收尾
+
+| | 内容 |
+|---|---|
+| **7** | **`experiments_log/` 进不进公开仓库** —— 数据（CSV）跟踪进 git，但解释它的 README 归到不公开那档。三个选项见 devlog 2026-09-07 |
+| **8** | ⏸ **`data/.../point_clouds/` 那 200 个 `.ply` 要不要删**（20 MB）。用户 9-07：先留着 |
+| **9** | **`notebooks/upstream_msn/` 的两个 notebook 还没逐个看代码** |
+| **12** | ⏸ 体素基线做不做 —— 唯一的范围悬念 |
+| **14** | 训练配置与原实现的差异表 —— 审计活。⭐ 训练 notebook 的附录已有 A~E 五条，可直接用 |
+| **16** | ⏸ epsilon 饿死要不要写。⚠️ k 折后有新情况：`cd_rep05_full_f0` 的 D2-STA2/3/4 也出现 94~95% query 被饿死，单折时只有 `tie_qk` 有 |
+| **17** | ⏸ 缺损区掩码的审计结果要不要写 |
+| **19** | 论文图的相机（`default` 看不见洞 vs `defect` 正对缺损）—— 未拍板。⚠️ 两本 notebook 现在默认都用 `defect` |
+| **25** | 🆕 **`notebooks/README.md` 要不要翻英文** —— 它不在「不用翻」那份名单里，但属存量中文，按「逐个确认再改」的节奏等拍板。本轮只就地改了事实，没翻 |
+| **26** | 🆕 ⚠️ **`explore_skull.ipynb` 现在 45.6 MB 且已提交**（一张 45.49 MB 的 marching-cubes 图），违反 notebooks/README 硬规则 3。9-06 清过一次，重写后又长回来了。**那张图可再生、与已删权重无关，清掉零损失** —— 等用户点头 |
+
+### ⚙️ 已知但未修
+
+| | 内容 |
+|---|---|
+| **20** | ⚠️ **两条内部判据打架**：`fold_paired` 的「同向 且 >2×SE」 vs `report.py` 的「0.1mm 分辨线」。`+rep(有DCD)` 过前者不过后者。暂不放宽，报数时两个都写。⭐ `MSN_compare_runs.ipynb` 第 3、6 节现在会自动把这种格子标出来 |
+| **21** | `.git` 2.0 GB。⭐ 新仓库是全新历史，自动解决 |
+| **22** | `surface_quality.csv` 里 `lr_fix` 与目录名 `lr_fix_only` 不一致。⚠️ 仍在（那是单折时代的历史行），但**新增的四行是 `<config>_f0`，不存在这个问题**；要清得连旧行一起迁移 |
+| **23** | `train_skullfix.py` 还留着自己的 `DATA_CACHE` / `BERT_CACHE` 副本（k 折期间刻意没动）。**现在可以收进 `paths.py` 了** |
+| **24** | 🆕 `rep_w05_f0` 末 30 轮 std 0.0386（>0.02 软线）。**保留** —— 去掉它会让本项目结论更好看，那是删数据最不该有的理由。训练 notebook 里写明了 |
+
+### ✅ 本批完成
+
+- ~~`MSN_compare_runs.ipynb`~~ ✅ 重写成 k 折读表本。⭐ **第 1~8 节不建模型** —— 没 GPU / 没权重 /
+  没 `data/` 的克隆也能跑；CPU 上端到端验过，四条边逐位复现 CLAUDE.md 第六节
+- ~~`MSN_surface_quality.ipynb`~~ ✅ 重写成折 0 的 2×2。⛔ 拿掉了结构性失明的 `signed_deviation` 那格；
+  渲染默认从「最好那颗」改成「中位那颗」
+- ~~**第 6 项：notebook 里 14 处写死的数据路径**~~ ✅ **全部关闭** —— 最后 3 处在 surface_quality
+- ~~第 3、4 项~~ ✅ 见上
+- 🆕 顺带回答了一个挂着的老问题：k 折的 `history.csv` 里有 `val_defect_cov_mm`，实测**按 `val_loss`
+  停在主指标上只差 0.021~0.037mm**，四格全在 0.1mm 线以下 → 曲线已走平，`experiments_log/README`
+  那条顾虑可以关掉。⭐ 它同时是训练期 callback 与 `report.eval_runs` 的独立交叉核对
+- 🆕 CPU 演练抓到一个老 bug：`preds` 只覆盖 8 颗统计队列而渲染取自 20 颗，手动改 `SKULL` 会 `KeyError`。已改成全推理
+- 🆕 `report.py`：`Run` 在缺 `experiments/` 时回落到 `experiments_log/`；`Run.weights` 缺文件时报错并指向 cold-weights
+- 🆕 用户判定：`MSN_surface_quality.ipynb` 里两张画着 `baseline_es20` 的不可再生的图**丢掉**（它是 ⛔ 错误性实验，不构成证据）
+
+## 2026-09-08（第十四次）— 两本评估 notebook 改名；notebooks/README 改成英文对外说明
+
+**触发**：用户要 notebook 名字体现流水线顺序，且 `notebooks/README.md` 要能传公开文件夹。
+
+⚠️ **改名对照（之前各次快照里的旧名照此换算）**：
+`MSN_compare_runs.ipynb` → **`MSN_eval_metrics.ipynb`**、
+`MSN_surface_quality.ipynb` → **`MSN_eval_surface.ipynb`**。
+⭐ 用户选的是「只改这两个、不加编号」，所以**流水线顺序靠 `notebooks/README.md` 的表格体现**，
+不靠文件名排序 —— 以后别再提加编号。
+
+**这一批的经验**：⚠️ **对「只追加」的文件做批量替换，事前 `grep -v` 排除不算保护。**
+我那条 sed 把 `devlog.md` / `TODO.md` 也改了（grep 输出没有 `./` 前缀，过滤没命中）。
+> **事后必须有一条能证明没改历史的检查：「相对 HEAD 的删除行数 == 0」。**
+> 它比任何事前过滤都可靠，因为它验的是结果不是意图。
+
+### 🔴 优先级最高
+
+| | 内容 | 状态 |
+|---|---|---|
+| **5** | **`src/` 下 17 个文件 426 行中文注释 + `setup_env.sh` 全中文** 要翻英文。⚠️ 日志类（`devlog`/`TODO`/`KFOLD`/`CLAUDE`/`experiments_log/README`）不公开、不用翻。<br>⚠️ **可见的接缝**：`report.py` 的 `format_paired` / `format_fold_paired` 表头是中文，而两本 notebook 已是英文 —— 英文 notebook 打印中文表格 | ⏳ **现在是最大的一块** |
+
+### 📌 公开仓库收尾
+
+| | 内容 |
+|---|---|
+| **7** | **`experiments_log/` 进不进公开仓库** —— 数据（CSV）跟踪进 git，但解释它的 README 归到不公开那档。⚠️ **现在多了一条依据**：指标词典和 k 折判读口径已挪进该 README 的最后两节，它现在是「判读手册」的家 |
+| **8** | ⏸ **`data/.../point_clouds/` 那 200 个 `.ply` 要不要删**（20 MB）。用户 9-07：先留着 |
+| **9** | **`notebooks/upstream_msn/` 的两个 notebook 还没逐个看代码** |
+| **12** | ⏸ 体素基线做不做 —— 唯一的范围悬念 |
+| **14** | 训练配置与原实现的差异表 —— 审计活。⭐ 训练 notebook 的附录已有 A~E 五条，可直接用 |
+| **16** | ⏸ epsilon 饿死要不要写 |
+| **17** | ⏸ 缺损区掩码的审计结果要不要写 |
+| **19** | 论文图的相机（`default` 看不见洞 vs `defect` 正对缺损）—— 未拍板。⚠️ 两本 notebook 现在默认都用 `defect` |
+| **26** | ⚠️ **`explore_skull.ipynb` 现在 45.6 MB 且已提交**（一张 45.49 MB 的图），违反硬规则 3。**可再生、与已删权重无关，清掉零损失** —— 等用户点头 |
+
+### ⚙️ 已知但未修
+
+| | 内容 |
+|---|---|
+| **20** | ⚠️ 两条内部判据打架（`fold_paired` 的「同向 且 >2×SE」 vs 「0.1mm 分辨线」）。暂不放宽，两个都报。⭐ `MSN_eval_metrics.ipynb` 第 6 节会自动标出这种格子 |
+| **21** | `.git` 2.0 GB。⭐ 新仓库是全新历史，自动解决 |
+| **22** | `surface_quality.csv` 里 `lr_fix` 与目录名 `lr_fix_only` 不一致（单折时代的历史行；新增的四行是 `<config>_f0`，无此问题） |
+| **23** | `train_skullfix.py` 还留着自己的 `DATA_CACHE` / `BERT_CACHE` 副本。**现在可以收进 `paths.py` 了** |
+| **24** | `rep_w05_f0` 末 30 轮 std 0.0386（>0.02 软线）。**保留** —— 去掉它会让本项目结论更好看 |
+
+### ✅ 本批完成
+
+- ~~两本评估 notebook 改名~~ ✅ 181 处引用、12 个文件同步（`devlog`/`TODO` 按只追加不动历史）
+- ~~`notebooks/README.md`~~ ✅ **244 行中文 → 71 行英文**，中文字符数 0。只讲六个 notebook
+  各是干嘛的、需要什么、怎么跑，外加「别把图的输出提交进去」
+- ~~判读材料的落点~~ ✅ 那 99 行改挪进 `experiments_log/README.md` 最后两节（日志类、不公开）。
+  **CLAUDE.md 规矩 2 的落点已就地更正**，读状态清单第 5、8 项跟着改指向
+- ~~notebook 里 5 处会指错的引用~~ ✅ 改成把结论直接写在 notebook 里，不留可能断的链接
+- ~~第 25 项（notebooks/README 要不要翻英文）~~ ✅ 用户拍板：翻，且重写
