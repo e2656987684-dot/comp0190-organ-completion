@@ -663,6 +663,28 @@ git diff baseline-7.08mm          # 看当前代码相对这个基线改了什�
 
 ---
 
+## 换了模型之后，哪些产物要重算
+
+（2026-09-08 从 `src/eval/README.md` 挪来 —— 那份改成对外的英文说明，只讲脚本是什么、怎么跑。）
+
+| 产物 | 要重算吗 | 怎么算 |
+|---|---|---|
+| `eval_all_runs.csv` | ✅ **必须** | `python src/eval/recompute_eval_all.py`，默认就是那 20 个折，带「与掩码无关的列必须逐位不变」的断言 |
+| `surface_quality.csv` | ✅ **必须** | `MSN_eval_surface.ipynb` 第 6 节（合并写 + 断言写入列与已有列一致）。⚠️ 队列是 `ids` 序前 8 颗 |
+| `pretrained_baseline/eval_*.csv` | ✅ **每折各一次** | `eval_pretrained_baseline.py --split-from <fold run> --out <csv>` —— 基线必须在**和它对比的模型同一批颅骨**上评 |
+| `attention_collapse.csv` | ✅ **每个最终模型各一次** | `attention_collapse.py --runs ...`。坍缩是一组权重的性质，结论几乎不变，但论文引哪份就从哪份读 |
+| `p2s.csv` | ✅ **必须** | `point_to_surface.py --runs ...`。网格/GT 那侧只依赖数据，预测那侧依赖权重 |
+| `roughness.csv` | ⚠️ 只在论文引用这个比较时 | `roughness.py --runs ...` |
+| `fold_text_branch.py` 的打印 | ⚠️ 建议 | 代数结论不变，但 bias 范数是那份权重特有的 |
+| `sampling_floor.csv` | ❌ 不用 | 只依赖数据和点数。这也是它默认跑全部 100 颗、而不是某一折 20 颗的原因 |
+| `defect_mask.csv` / `normal_quality.csv` | ❌ 不用 | 数据的性质，**全程无模型参与** |
+| `defect_mask_labels.npz` | ❌ 不用 | 逐点 implant 真值。⭐ 它让评测**不需要读原始 nrrd** —— `/root` 是临时盘而 `data/` gitignored |
+| `defect_mask_switch.csv` | ❌ 不用 | 试算，不是结论 |
+| 本文件里的各张对照表 | ✅ **手工更新** | 每个数字都来自上面那些 CSV |
+| `reports/figures/*.png` | ✅ **必须** | `make_report_figures.py` 的 `RUNS` —— 哪几个 run 讲故事是叙事选择 |
+
+---
+
 ## 指标词典与 k 折判读口径（2026-09-08 从 notebook 挪过来）
 
 ⭐ **干活时最常查的就是这两张。** `MSN_eval_metrics.ipynb` 里只留一两句，详细的在这里。

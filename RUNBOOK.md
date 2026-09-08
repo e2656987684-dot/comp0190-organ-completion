@@ -132,7 +132,8 @@ $PY src/eval/recompute_eval_all.py            # 约 15 分钟，合并写 eval_a
 | `$PY src/eval/fold_text_branch.py` | **只打印** | 🎮 | 40 秒 | ⚠️ 建议 |
 | `$PY src/eval/eval_pretrained_baseline.py` | `eval_val20_x5.csv` | 🎮 | 十几分 | ✅ 每折各一次 |
 
-完整的「k 折之后要重跑什么」在 [`src/eval/README.md`](src/eval/README.md) 末尾。
+完整的「换了模型之后哪些产物要重算」在 [`experiments_log/README.md`](experiments_log/README.md)。
+⚠️ `src/eval/README.md` 2026-09-08 起是**对外的英文说明**（脚本是什么、怎么跑），不再装这张表。
 
 ---
 
