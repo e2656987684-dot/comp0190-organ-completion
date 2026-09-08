@@ -3,6 +3,7 @@
 | notebook | 干什么 | 什么时候用 |
 |---|---|---|
 | **[`MSN_train_skullfix.ipynb`](MSN_train_skullfix.ipynb)** | ⭐ **训练**（2026-09-08 重写）。2×2 设计、20 个折怎么跑出来的、逐折自检 + 曲线 | 想复现训练、或核对那 20 折干不干净时。⚠️ 第 4 节起**不用 GPU 也能跑**（记录在 git 里） |
+| **[`MSN_inference.ipynb`](MSN_inference.ipynb)** | **推理**（2026-09-08 新建）。加载某一折的权重，把残缺颅骨补全 | 想直接看模型输出什么时。要 GPU + 权重，一颗约 1 秒 |
 | **[`MSN_compare_runs.ipynb`](MSN_compare_runs.ipynb)** | **判读结果**：指标词典、同轮次表、配对检验、主表、可视化、对照组 | 训练跑完之后 |
 | [`MSN_surface_quality.ipynb`](MSN_surface_quality.ipynb) | mesh 重建、密度诊断、有符号偏差着色 | 想看**表面质量**而不是数字时 |
 | **[`MSN_baseline_pretrained.ipynb`](MSN_baseline_pretrained.ipynb)** | ⭐ **对照评估**（2026-09-08 重写）。作者发布的权重 vs 本项目 k 折模型；含权重加载自检 | 想知道「专精训练到底买到了多少」时。⚠️ 数字由 `eval_pretrained_baseline.py` 产出，这里只读表 |
