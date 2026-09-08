@@ -5,7 +5,7 @@
 | **[`MSN_train_skullfix.ipynb`](MSN_train_skullfix.ipynb)** | **发起一次训练** + 本轮自检 + 存档 | 每次要跑训练。**只改第 1 节控制面板** |
 | **[`MSN_compare_runs.ipynb`](MSN_compare_runs.ipynb)** | **判读结果**：指标词典、同轮次表、配对检验、主表、可视化、对照组 | 训练跑完之后 |
 | [`MSN_surface_quality.ipynb`](MSN_surface_quality.ipynb) | mesh 重建、密度诊断、有符号偏差着色 | 想看**表面质量**而不是数字时 |
-| [`MSN_baseline_pretrained.ipynb`](MSN_baseline_pretrained.ipynb) | 作者发布的 `MSN_weights3.h5` 在本项目数据上推理 | 对照组，已跑完，基本不用再动 |
+| **[`MSN_baseline_pretrained.ipynb`](MSN_baseline_pretrained.ipynb)** | ⭐ **对照评估**（2026-09-08 重写）。作者发布的权重 vs 本项目 k 折模型；含权重加载自检 | 想知道「专精训练到底买到了多少」时。⚠️ 数字由 `eval_pretrained_baseline.py` 产出，这里只读表 |
 | **[`explore_skull.ipynb`](explore_skull.ipynb)** | ⭐ **看数据**（2026-09-07 重写）。原始 nrrd 体数据 + `prepare_skullfix.py` 产出的点云缓存，含缺损区真值 | 想搞清楚「喂进模型的到底是什么」时。**只读，不写任何文件** |
 | [`upstream_msn/`](upstream_msn/) | 上游 MedShapeNet 项目的两个 notebook（推理 / 训练）。⚠️ **不是原样未改**：本项目往推理那个里接过自己的数据管线 | 只在查证"上游到底怎么写的"时打开。⚠️ 逐字原版看 `src/models/msn_demo_arch.py` |
 
