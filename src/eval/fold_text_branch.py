@@ -1,51 +1,37 @@
 r"""Verify that the text branch is exactly four bias vectors, by folding it away.
 
-WHAT THIS CHECKS
-  The published architecture conditions the decoder on a text embedding: BERT
-  encodes the class name, `text_proj` maps it to the encoder's width, and the
-  result is added to the global vector before the decoder sees it. With a single
-  class ("skull") that embedding is a CONSTANT -- the same 768 numbers for every
-  sample of every epoch -- so the branch cannot carry per-sample information. The
-  question is whether it carries anything at all.
+The published architecture conditions the decoder on a text embedding. With a
+single class that embedding is a CONSTANT -- the same 768 numbers for every
+sample of every epoch -- so the branch cannot carry per-sample information. This
+script proves it carries nothing at all, rather than arguing it.
 
-  It does not, and this script proves it rather than arguing it. Write `c` for the
-  constant after `text_proj`, `g` for the pooled global vector, `x` for the
-  decoder's residual stream. Each of the four D1 cross-attention blocks computes
+Write `c` for the constant after `text_proj`, `g` for the pooled global vector,
+`x` for the decoder's residual stream. Each of the four D1 cross-attention blocks
+computes
 
-      r    = x - att @ V(m1)                     m1 = tile(g + c)
-           = x - V(g) - V(c)                     att is uniform, V is linear and unbiased
-      LBR  = relu(W·r + b)
-           = relu( W·(x - V(g))  -  W·V(c)  +  b )
-                                   \________/
-                                   a constant the bias can absorb
+    r    = x - att @ V(m1)                m1 = tile(g + c)
+         = x - V(g) - V(c)                att is uniform, V is linear and unbiased
+    LBR  = relu(W.r + b)
+         = relu( W.(x - V(g))  -  W.V(c)  +  b )
+                                \________/
+                                a constant the bias can absorb
 
-  so a model WITHOUT the text branch computes exactly the same function once its
-  bias is set to
+so a model WITHOUT the branch computes the same function once its bias is set to
+`b' = b - (c @ W_V) @ W_LBR`. The step from `att @ V(m1)` to `V(g + c)` needs the
+attention weights to be uniform, and they are structurally: every row of `m1` is
+the same vector, so every key is identical and softmax returns 1/dec_seed
+whatever Q and K learned.
 
-      b' = b - (c @ W_V) @ W_LBR
+This shows redundancy in EXPRESSIVE POWER only. Removing the branch and
+retraining measurably hurts the defect region, so the difference is in
+optimisation -- gradient descent does not find those bias values on its own once
+the branch is gone. Why it does not remains a hypothesis.
 
-  The step from `att @ V(m1)` to `V(g + c)` needs the attention weights to be
-  uniform. They are, structurally: every row of `m1` is the same vector, so every
-  key is identical and softmax returns 1/dec_seed regardless of what Q and K
-  learned. That was measured independently (row-to-row difference 0.000e+00,
-  weights fixed at 1/1024); if it were false, this script's output would not match.
+The algebraic conclusion is a property of the architecture and cannot change, but
+the norms printed below belong to the checkpoint passed in, so point `--run` at
+whichever one is being reported.
 
-WHAT IT DOES NOT SHOW
-  Only that the branch is REDUNDANT IN EXPRESSIVE POWER. Removing it and
-  retraining measurably hurts the defect region (coverage 3.24 -> 3.41 mm,
-  confirmed over two runs each), which means the difference is in OPTIMISATION,
-  not in what the network can represent -- gradient descent does not find those
-  bias values on its own when the branch is gone. The proposed explanation (the
-  branch acts as a lever on the effective learning rate of that bias direction)
-  remains a hypothesis; see devlog 2026-08-21 and 2026-08-25.
-
-⚠️ k 折之后**建议在最终模型上重跑一次**。
-  The algebraic conclusion (the branch equals four bias vectors) is a property of
-  the architecture and cannot change. The NUMBERS quoted from it can: the bias
-  norms, and the "46% of the target" figure, are specific to the weights passed
-  in. Point `--run` at whichever checkpoint the thesis reports and re-read them.
-
-    python src/eval/fold_text_branch.py [--run msn_skullfix/cd_rep05_full] [--n 5]
+    python src/eval/fold_text_branch.py [--run msn_skullfix/cd_rep05_full_f0] [--n 5]
 """
 
 from __future__ import annotations
@@ -139,7 +125,7 @@ def main():
     nt = os.path.join(REPO, "experiments", "msn_skullfix", "notext", "best.h5")
     if os.path.exists(nt):
         import h5py
-        print("\n无文本模型实际学到的 bias（对照上面的 folded ||b'||）:")
+        print("\nwhat a no-text run actually learned, against the folded ||b'|| above:")
         with h5py.File(nt, "r") as f:
             for name in BLOCKS:
                 key = f"{name}_LBR_lin/{name}_LBR_lin/bias:0"
@@ -149,8 +135,8 @@ def main():
                     b_nt = np.array(grp[list(grp)[0]]["bias:0"])
                 target = np.linalg.norm(folded[f"{name}_LBR_lin"][1])
                 got_norm = np.linalg.norm(b_nt)
-                print(f"  {name}: 目标 {target:.4f}  实际 {got_norm:.4f}  "
-                      f"= 目标的 {100 * got_norm / target:.0f}%")
+                print(f"  {name}: target {target:.4f}  reached {got_norm:.4f}  "
+                      f"= {100 * got_norm / target:.0f}% of it")
 
     # ---------------- did it change anything? ----------------
     d = np.abs(ref - got)
@@ -163,17 +149,17 @@ def main():
     # at 1e-5 or below is arithmetic noise, not a difference in the function.
     import report as _rp
     gt = data["gt"]
-    print("\n指标层面（论文要引的就是这个）:")
-    print(f"  {'skull':8}{'CD_t 原始':>12}{'CD_t 折叠后':>13}{'差':>12}")
+    print("\nand at the level of the reported metric:")
+    print(f"  {'skull':8}{'CD_t original':>15}{'CD_t folded':>13}{'diff':>12}")
     for k, i in enumerate(pos[:3]):
         s_mm = float(data["scale_mm"][i])
         a = _rp.metrics_from_points(ref[k], gt[i], s_mm)["CD_t_mm"]
         b = _rp.metrics_from_points(got[k], gt[i], s_mm)["CD_t_mm"]
         print(f"  {ids[i]:8}{a:>12.6f}{b:>13.6f}{abs(a - b):>12.2e}")
 
-    print("\n" + ("✅ 折叠等价成立 —— 3,149,824 个参数的文本分支 == 4 个偏置向量"
+    print("\n" + ("EQUIVALENT: the text branch's 3,149,824 parameters are four bias vectors"
                   if d.max() < 1e-4 else
-                  "❌ 输出不同，等价不成立 —— 检查注意力是否真的均匀"))
+                  "NOT EQUIVALENT: outputs differ -- check that the attention really is uniform"))
 
 
 if __name__ == "__main__":

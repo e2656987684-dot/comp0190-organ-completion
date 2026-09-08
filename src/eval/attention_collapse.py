@@ -1,96 +1,72 @@
-r"""Measure how much attending every attention block in a trained model actually does.
+"""Measure how much each attention block in a trained model actually attends.
 
-WHAT THIS CHECKS
-  The network is sold as a Point Cloud Transformer: sixteen offset-attention
-  blocks (eight encoder self-attention, four D1 cross-attention, four D2). An
-  attention block that returns near-uniform weights is not attending -- it is
-  computing a mean, and `x <- x + LBR(x - mean)` is an affine layer wearing a
-  transformer's name. Which of the sixteen are in that state is a claim about
-  the architecture, so it has to be measured rather than assumed, and it has to
-  be measured from the checkpoint the thesis reports.
+The network is a Point Cloud Transformer with sixteen offset-attention blocks. A
+block returning near-uniform weights is not attending -- it is computing a mean,
+and the block reduces to an affine layer wearing a transformer's name. Which of
+the sixteen are in that state is a claim about the architecture, so it is
+measured from the reported checkpoint rather than assumed.
 
-  Two DIFFERENT things both produce uniform weights, and the difference matters
-  more than the number does:
+Two different things produce uniform weights, and the difference matters more
+than the count does:
 
-    STRUCTURAL   every key row is the same vector, so softmax returns 1/n_keys
-                 whatever Q and K learned. `key_row_spread` is then exactly 0.
-                 This is the four D1 blocks in the published configuration:
-                 m1 = tile(global vector), so the block cannot attend even in
-                 principle. Nothing was learned or failed to be learned.
-    LEARNED      the keys differ, but Q and K never developed enough contrast to
-                 separate them -- classic attention collapse. `key_row_spread`
-                 is large while `eff_frac` is still ~1. This is what to say
-                 something about: 80 training skulls are not enough to learn
-                 where to look.
+  STRUCTURAL   every key row is the same vector, so softmax returns 1/n_keys
+               whatever Q and K learned, and `key_row_range` is exactly 0. The
+               block cannot attend even in principle; nothing was learned or
+               failed to be learned.
+  LEARNED      the keys differ, but Q and K never developed enough contrast to
+               separate them -- classic attention collapse, with a large
+               `key_row_spread` while `eff_frac` is still about 1. This is the
+               one that says something: the training set is not large enough to
+               learn where to look.
 
-  Reporting them as one number ("12 of 16 collapsed") hides that distinction, so
-  the table below keeps them apart and the summary counts them separately.
+Reporting them as one number would hide that, so they are counted separately.
 
-HOW EACH COLUMN IS DEFINED (state it, because the old temporary script did not)
-  eff_keys      exp(H) of the attention row, H the natural-log entropy over the
-                key axis, averaged over queries then over skulls. This is the
-                perplexity reading of the row: "this query effectively spreads
-                itself over N keys". Equals n_keys exactly when uniform.
-                ⚠️ Read off the row RENORMALISED to sum to 1 -- see `rows()`. The
-                raw rows do not all sum to 1, and entropy on a sub-normalised row
-                reads as sharp attention when the truth is the opposite.
-  row_mass      what the raw row DOES sum to, averaged over queries. 1.0 is
-                normal; below that, this block's own 1e-9 epsilon is suppressing
-                queries, and `frac_starved` says how many.
-  frac_starved  fraction of query rows carrying less than 0.99 of a unit of
-                weight into `att @ V`, i.e. queries the epsilon switched off.
-  eff_frac      eff_keys / n_keys. 1.000 is perfectly uniform.
-  energy_std    std of the raw q.k scores ACROSS the key axis, averaged over
-                queries. It says how much contrast Q and K produced before any
-                normalisation, which is the quantity a collapse argument is
-                really about -- eff_frac can look uniform simply because the
-                rows are long.
-  peak_x_unif   max attention weight in a row, in units of the uniform weight.
-                1.0 = no key is preferred at all.
-  key0_x_unif   the same for key 0 specifically. Only interesting when the key
-                sequence begins with the global vector (per_point_attn runs),
-                where it answers "did the decoder at least keep looking at the
-                global token?" -- measured 0.99, i.e. it did not.
-  key_row_spread  std across key ROWS, averaged over channels. A magnitude: how
-                different the keys are at all. Read it next to energy_std --
-                keys that differ while the scores do not is exactly the learned
-                case.
-  key_row_range max|row - row_0| over the whole key tensor, and the test that
-                decides STRUCTURAL. Exactly 0 when the keys are tiled copies.
-                Do not use the std for this: on rows that are bit-for-bit
-                identical it still reads ~4e-07, because the mean it subtracts
-                is itself rounded.
-  ctrl_eff_frac   eff_frac recomputed from the SAME scores with a textbook
-                softmax(q.k/sqrt(d), axis=keys) instead of this architecture's
-                softmax-over-queries-then-L1. It rules out "you normalised along
-                the wrong axis" as the explanation for uniformity: if the scores
-                carried contrast, the textbook normalisation would show it.
+Columns:
 
-WHAT IT DOES NOT SHOW
-  Not that attention is useless for this task, and not that the encoder is
-  wasted. Collapse is a statement about optimisation at this data scale, not a
-  verdict on the architecture -- PoinTr / SeedFormer / AdaPoinTr are transformers
-  that work, trained on tens of thousands of shapes rather than eighty skulls.
-  It also says nothing about whether relieving the collapse would help: the one
-  attempt to give D1 something to attend to (`pp_attn`) made everything worse
-  BECAUSE the attention stayed uniform and diluted the global vector 2000-fold.
+  eff_keys        exp(entropy) over the key axis: how many keys a query
+                  effectively spreads itself over. Equals n_keys when uniform.
+                  Warning: computed on the row RENORMALISED to sum to 1 --
+                  entropy on a sub-normalised row reads as sharp attention when
+                  the truth is the opposite.
+  row_mass        what the raw row actually sums to. Below 1.0, this block's own
+                  epsilon is suppressing queries.
+  frac_starved    fraction of query rows carrying less than 0.99 of a unit of
+                  weight, i.e. queries the epsilon switched off.
+  eff_frac        eff_keys / n_keys; 1.000 is perfectly uniform.
+  energy_std      spread of the raw scores across the key axis -- how much
+                  contrast Q and K produced before any normalisation, which is
+                  what a collapse argument is really about.
+  peak_x_unif     largest weight in a row, in units of the uniform weight.
+  key0_x_unif     the same for key 0, meaningful only when the key sequence
+                  starts with the global vector.
+  key_row_spread  how different the keys are at all. Read next to energy_std:
+                  keys that differ while the scores do not is the learned case.
+  key_row_range   max|row - row_0|, and the test that decides STRUCTURAL. Exactly
+                  0 for tiled copies. Do not use the std for this -- on rows that
+                  are bit-for-bit identical it still reads about 4e-07, because
+                  the mean it subtracts is itself rounded.
+  ctrl_eff_frac   eff_frac recomputed from the same scores with a textbook
+                  softmax over the key axis, ruling out "you normalised along the
+                  wrong axis" as the explanation for uniformity.
 
-  The numbers are read off ONE checkpoint per run. They are not averaged over
-  training seeds and no claim here is a comparison between configurations, so
-  they carry no paired statistics -- `std_*` columns are the spread across
-  validation skulls, which is the only sampling this measurement does.
+This does not show that attention is useless for the task. Collapse is a
+statement about optimisation at this data scale, not a verdict on the
+architecture -- transformers that work in this literature train on tens of
+thousands of shapes. Nor does it show that relieving the collapse would help: the
+one attempt to give the decoder something to attend to made everything worse,
+because the attention stayed uniform and diluted the global vector instead.
 
-⚠️ k 折之后要重跑（每个最终模型各一次），见 src/eval/README.md。
-  Collapse is a property of a set of weights, not of the data split, and it has
-  reproduced across every checkpoint looked at so far -- but "so far" is three
-  checkpoints, and the thesis quotes numbers from whichever model it reports.
-  Point --runs at the final models and re-read them.
+Numbers come from ONE checkpoint per run, are not averaged over seeds, and no
+claim here compares configurations, so there are no paired statistics -- `std_*`
+is the spread across validation skulls.
+
+Re-run once per final model when the models change; see src/eval/README.md.
 
     python src/eval/attention_collapse.py [--runs A B ...] [--n 3]
 
-  Writes experiments_log/attention_collapse.csv, MERGED on (run, block) so an
-  earlier run's rows survive -- which is what lets you analyse one run per
-  invocation if three architectures at once exhaust the card.
+Writes experiments_log/attention_collapse.csv, merged on (run, block) so earlier
+rows survive -- which is what lets one run be analysed per invocation when
+several architectures at once would exhaust the card.
 """
 
 from __future__ import annotations

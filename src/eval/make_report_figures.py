@@ -1,9 +1,10 @@
-"""Export the progress-report figures as PNGs, straight from the real runs.
+"""Export the figures for the write-up as PNGs, straight from the real runs.
 
-Every image the slides use is produced here, from `experiments/` and the data
-cache -- nothing is redrawn by hand, so a slide can never drift from what the
-code actually outputs. Re-run after new experiments and the deck's figures
-update with it.
+Every image is produced from the archived runs and the data cache, so a figure
+can never drift from what the code actually outputs. Re-run after new
+experiments and the figures update with them.
+
+Which runs tell the story is a narrative choice: change `RUNS` freely.
 
     python src/eval/make_report_figures.py [--out reports/figures]
 """

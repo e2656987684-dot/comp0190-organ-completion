@@ -1,40 +1,30 @@
-r"""Check the defect-region mask against the implant the dataset actually ships.
+"""Check the defect-region mask against the implant the dataset actually ships.
 
-WHAT IS BEING CHECKED
-  The defect region is the main metric's domain, and it is currently INFERRED,
-  not known: a ground-truth point counts as "in the defect" when the nearest
-  point of the defective input is more than 5 mm away. That threshold was argued
-  from a histogram -- ground-truth-to-input distance is clearly bimodal (a peak
-  at 2-3 mm where the two clouds sample the same surface, a trough at 5-6 mm,
-  the real hole beyond 15 mm) and a sensitivity sweep flattens out past 5 mm
-  (3 mm -> 42.0%, 4 mm -> 16.1%, 5 mm -> 6.7%, 6 mm -> 5.0%, 8 mm -> 4.2%).
+The defect region is the main metric's domain, and it is INFERRED rather than
+known: a ground-truth point counts as "in the defect" when the nearest point of
+the defective input is more than 5 mm away. That threshold was argued from a
+histogram -- ground-truth-to-input distance is clearly bimodal, with a peak where
+the two clouds sample the same surface, a trough around 5-6 mm, and the real hole
+well beyond -- and from a sensitivity sweep that flattens out past 5 mm.
 
-  An argument, not a measurement. And a measurement is available and has never
-  been used: `training_set/implant/` holds the missing piece itself, and it is
-  exact, not approximate -- verified here per skull, `defective + implant ==
-  complete` voxel for voxel with zero overlap.
+An argument, not a measurement. And a measurement is available: `training_set/
+implant/` holds the missing piece itself, exactly rather than approximately --
+verified here per skull, `defective + implant == complete` voxel for voxel with
+zero overlap. So every ground-truth point can be labelled by ground truth instead
+of by proxy, and the proxy scored against it.
 
-  So every ground-truth point can be labelled by ground truth rather than by
-  proxy, and the proxy can be scored against it: precision, recall, and a sweep
-  to see whether 5 mm is actually the best threshold.
+The labelling is unambiguous because the complete skull's surface is the union of
+two disjoint pieces: the part bounding the remaining bone and the part bounding
+the implant. Their interface, where the implant is cut away, is INTERIOR to the
+complete skull and so not on its surface at all. A ground-truth point therefore
+lies over one piece or the other, and the nearer mesh says which. Points within a
+voxel of both are counted as `seam_pct`; they sit on the rim.
 
-WHY THE LABELLING IS UNAMBIGUOUS
-  The complete skull's surface is the union of two disjoint pieces of surface:
-  the part bounding the remaining bone, and the part bounding the implant. Their
-  interface -- where the implant is cut from the skull -- is INTERIOR to the
-  complete skull and therefore not on its surface at all. So a ground-truth
-  point, which lies on the complete surface, is over one or the other, and the
-  nearer of the two meshes says which. Points within a voxel of both are counted
-  and reported as `seam_pct`; they sit on the rim where the two surfaces meet.
-
-WHAT THIS CANNOT TELL YOU
-  Nothing about the model. No prediction is loaded, no GPU is used; this is a
-  property of the DATA. If the proxy mask turns out to be inaccurate, every
-  defect-region number moves -- but only in absolute terms. Every configuration
-  was scored through the same mask, so the comparisons between them are
-  unaffected, in the same way the sampling floor is common-mode.
-
-⚠️ k 折之后不用重跑。数据的性质，与划分和权重无关（同 `sampling_floor.csv`）。
+This says nothing about any model -- no prediction is loaded and no GPU is used.
+If the proxy mask is inaccurate every defect-region number moves, but only in
+absolute terms: every configuration was scored through the same mask, so
+comparisons between them are unaffected, in the same way the sampling floor is
+common-mode.
 
     python src/eval/defect_mask_audit.py [--n 20] [--self-test]
 """
@@ -108,7 +98,8 @@ def label_one(repo, sid, raw_root, gt_pts, scale_mm):
 
     pts_n, _, scale, _ = nq.truth_for(sid, raw_root)
     if abs(scale - scale_mm) > 1e-3 or np.abs(pts_n - gt_pts).max() > 1e-5:
-        raise SystemExit(f"{sid}: 管线复现失败，坐标系没对上，已中止")
+        raise SystemExit(f"{sid}: could not reproduce the pipeline -- the coordinate "
+                         f"frames do not line up. Aborted.")
     seed = nq._task_seed(sid, raw_root)
     dense_def, _, _ = nq._dense_with_faces(
         os.path.join(raw_root, "defective_skull", f"{sid}.nrrd"), 16384, 0.5, seed * 2 + 1)
@@ -118,14 +109,16 @@ def label_one(repo, sid, raw_root, gt_pts, scale_mm):
     mesh_d, vol_d = _mesh_mm(os.path.join(raw_root, "defective_skull", f"{sid}.nrrd"))
     _, vol_c = _mesh_mm(os.path.join(raw_root, "complete_skull", f"{sid}.nrrd"))
     if not np.array_equal((vol_d > 0) | (vol_i > 0), vol_c > 0) or ((vol_i > 0) & (vol_d > 0)).any():
-        raise SystemExit(f"{sid}: defective + implant != complete，真值前提不成立，已中止")
+        raise SystemExit(f"{sid}: defective + implant != complete, so the premise "
+                         f"behind the ground-truth labels does not hold. Aborted.")
     for m in (mesh_i, mesh_d):
         m.vertices = (np.asarray(m.vertices) - centroid) / scale * scale_mm
 
     is_imp, d_i, d_d, d_min = label_by_implant(gt_pts * scale_mm, mesh_i, mesh_d)
     off = float((d_min > ON_SURFACE_MM).mean())
     if off > 0.02:
-        raise SystemExit(f"{sid}: {100*off:.1f}% 的 GT 点离两张表面都太远，并集不变量不成立，已中止")
+        raise SystemExit(f"{sid}: {100*off:.1f}% of ground-truth points are far from both "
+                         f"surfaces, so the union invariant fails. Aborted.")
     return is_imp, {"seam_pct": 100.0 * float(((d_i < ON_SURFACE_MM) & (d_d < ON_SURFACE_MM)).mean()),
                     "off_surface_pct": 100.0 * off,
                     "watertight": bool(mesh_i.is_watertight),
@@ -146,7 +139,8 @@ def analyse(repo, sids, raw_root):
         # ---- rebuild the frame; `truth_for` already verifies it reproduces the cache
         pts_n, _, scale, _ = nq.truth_for(sid, raw_root)
         if abs(scale - s_mm) > 1e-3 or np.abs(pts_n - gt[j]).max() > 1e-5:
-            raise SystemExit(f"{sid}: 管线复现失败，坐标系没对上，已中止")
+            raise SystemExit(f"{sid}: could not reproduce the pipeline -- the coordinate "
+                             f"frames do not line up. Aborted.")
         # The centroid must come from the SAME draw prepare_skullfix used, or the
         # meshes land in a different frame from the cached points.
         seed = nq._task_seed(sid, raw_root)
@@ -163,8 +157,9 @@ def analyse(repo, sids, raw_root):
         n_overlap = int(((vol_i > 0) & (vol_d > 0)).sum())
         if not ok_union or n_overlap:
             raise SystemExit(
-                f"{sid}: defective + implant != complete（并集相同 {ok_union}，"
-                f"重叠 {n_overlap} 体素）—— 真值标签的前提不成立，已中止")
+                f"{sid}: defective + implant != complete (union matches: {ok_union}, "
+                f"{n_overlap} overlapping voxels). The premise behind the ground-truth "
+                f"labels does not hold. Aborted.")
 
         for m in (mesh_i, mesh_d):                       # into the cache's frame, in mm
             m.vertices = (np.asarray(m.vertices) - centroid) / scale * s_mm
@@ -176,8 +171,9 @@ def analyse(repo, sids, raw_root):
         off = float((d_min > ON_SURFACE_MM).mean())
         if off > 0.02:
             raise SystemExit(
-                f"{sid}: {100*off:.1f}% 的 GT 点离两张表面都超过 {ON_SURFACE_MM}mm，"
-                f"「complete 表面 = implant 表面 ∪ defective 表面」不成立，已中止")
+                f"{sid}: {100*off:.1f}% of ground-truth points are further than "
+                f"{ON_SURFACE_MM}mm from both surfaces, so 'complete surface = implant "
+                f"surface union defective surface' does not hold. Aborted.")
         seam = float(((d_i < ON_SURFACE_MM) & (d_d < ON_SURFACE_MM)).mean())
 
         # ---- the proxy under test ----
@@ -199,70 +195,81 @@ def analyse(repo, sids, raw_root):
                 "jaccard": tp / (tp + fp + fn) if tp + fp + fn else np.nan,
                 "seam_pct": 100.0 * seam, "off_surface_pct": 100.0 * off,
             })
-        print(f"  {sid} ✓  真实缺损占 {100*is_imp.mean():5.2f}%  "
-              f"(5mm 规则给 {100*(d_to_input > CURRENT_MM).mean():5.2f}%)  "
-              f"缝隙点 {100*seam:.2f}%  离面 {100*off:.3f}%")
+        print(f"  {sid} ok  true defect {100*is_imp.mean():5.2f}%  "
+              f"(the 5mm rule says {100*(d_to_input > CURRENT_MM).mean():5.2f}%)  "
+              f"seam {100*seam:.2f}%  off-surface {100*off:.3f}%")
     return pd.DataFrame(rows)
 
 
 def report(df):
     n = df["id"].nunique()
-    print(f"\n{'=' * 76}\n缺损区掩码 vs 数据集自带的 implant 真值（{n} 颗颅骨）\n{'=' * 76}")
-    print(f"{'阈值mm':>8}{'真实占比%':>11}{'规则占比%':>11}{'precision':>11}{'recall':>9}"
+    print(f"\n{'=' * 76}\nthe distance rule against the dataset's implant ground truth "
+          f"({n} skulls)\n{'=' * 76}")
+    print(f"{'thresh':>8}{'true %':>11}{'rule %':>11}{'precision':>11}{'recall':>9}"
           f"{'F1':>8}{'Jaccard':>9}")
     print("-" * 76)
     best_f1 = df.groupby("thresh_mm")["f1"].mean().idxmax()
     for t, g in df.groupby("thresh_mm"):
-        mark = "  ← 当前" if t == CURRENT_MM else ("  ← F1 最优" if t == best_f1 else "")
+        mark = "  <- current" if t == CURRENT_MM else ("  <- best F1" if t == best_f1 else "")
         print(f"{t:>8.1f}{g.true_pct.mean():>11.2f}{g.geom_pct.mean():>11.2f}"
               f"{g.precision.mean():>11.3f}{g.recall.mean():>9.3f}"
               f"{g.f1.mean():>8.3f}{g.jaccard.mean():>9.3f}{mark}")
 
     cur = df[df.thresh_mm == CURRENT_MM]
-    print(f"\n  当前 5mm：precision {cur.precision.mean():.3f}（划进来的点里有这么多真在 implant 上）")
-    print(f"            recall    {cur.recall.mean():.3f}（真实 implant 表面被划进来这么多）")
-    print(f"            真实缺损占 GT 的 {cur.true_pct.mean():.2f}%，规则给出 {cur.geom_pct.mean():.2f}%")
-    print(f"  跨颅骨 std: precision {cur.precision.std():.3f}  recall {cur.recall.std():.3f}")
-    print(f"  缝隙点（离两张表面都 <{ON_SURFACE_MM}mm）{cur.seam_pct.mean():.2f}% —— "
-          f"标签在这里天然模糊，是精度的下限")
+    print(f"\n  at the current 5mm: precision {cur.precision.mean():.3f} -- this much of "
+          f"what the rule selects really is on the implant")
+    print(f"                      recall    {cur.recall.mean():.3f} -- this much of the "
+          f"real implant surface gets selected")
+    print(f"                      the true defect is {cur.true_pct.mean():.2f}% of the "
+          f"ground truth, the rule says {cur.geom_pct.mean():.2f}%")
+    print(f"  across skulls, std: precision {cur.precision.std():.3f}  "
+          f"recall {cur.recall.std():.3f}")
+    print(f"  seam points, within {ON_SURFACE_MM}mm of both surfaces: "
+          f"{cur.seam_pct.mean():.2f}% -- the label is genuinely ambiguous there, so this "
+          f"is a floor on precision")
 
     f1c, f1b = cur.f1.mean(), df[df.thresh_mm == best_f1].f1.mean()
     if best_f1 == CURRENT_MM:
-        print(f"\n  ✅ **5mm 就是扫描里 F1 最优的那一档**，那个直方图论证被真值确认了。")
+        print(f"\n  5mm is the best F1 in the sweep -- the histogram argument is "
+              f"confirmed by the ground truth.")
     else:
-        print(f"\n  ⚠️ F1 最优在 {best_f1:.1f}mm（{f1b:.3f}）而非当前的 5.0mm（{f1c:.3f}），"
-              f"差 {f1b - f1c:+.3f}")
+        print(f"\n  Warning: the best F1 is at {best_f1:.1f}mm ({f1b:.3f}) rather than the "
+              f"current 5.0mm ({f1c:.3f}), a difference of {f1b - f1c:+.3f}")
     if cur.precision.mean() > 0.9 and cur.recall.mean() > 0.9:
-        print("  ✅ precision 与 recall 都 >0.9 —— 代理规则可靠，缺损区指标不必改口径。")
+        print("  precision and recall are both above 0.9 -- the proxy is reliable and the "
+              "defect-region metrics need no change of definition.")
     else:
-        print("  ⚠️ precision 或 recall 低于 0.9 —— 代理规则与真值有实质差距。\n"
-              "     ⚠️ 但注意：所有配置用的是同一个掩码，误差是**共模**的，\n"
-              "        受影响的是缺损区指标的**绝对值**，不是配置之间的**比较**。")
+        print("  Warning: precision or recall is below 0.9 -- the proxy differs materially "
+              "from the ground truth.\n"
+              "     Note that every configuration used the SAME mask, so the error is "
+              "common-mode: it moves\n"
+              "     the absolute defect-region numbers, not the comparisons between "
+              "configurations.")
 
 
 def self_test():
     """Two adjacent boxes: the labelling must follow which box a point sits on."""
     import trimesh
     import point_to_surface as p2s
-    print("=== 自检：把'哪张面更近'的判定放在已知答案的几何上 ===")
-    a = trimesh.creation.box(extents=[10, 10, 10])                  # 「剩余骨」
+    print("=== self-test: run the 'which surface is nearer' rule on known geometry ===")
+    a = trimesh.creation.box(extents=[10, 10, 10])                  # the remaining bone
     b = trimesh.creation.box(extents=[10, 10, 10]); b.apply_translation([10, 0, 0])  # 「implant」
     rng = np.random.default_rng(0)
-    # 各自外表面上的点（避开交界面 x=5）
+    # points on each outer surface, keeping clear of the interface at x=5
     pa, _ = trimesh.sample.sample_surface(a, 2000, seed=1)
     pb, _ = trimesh.sample.sample_surface(b, 2000, seed=2)
     pa = np.asarray(pa)[np.abs(np.asarray(pa)[:, 0] - 5) > 0.5]
     pb = np.asarray(pb)[np.abs(np.asarray(pb)[:, 0] - 5) > 0.5]
     is_imp_a, *_ = label_by_implant(pa, b, a)
     is_imp_b, *_ = label_by_implant(pb, b, a)
-    print(f"① 在'剩余骨'上的点被判成 implant 的比例 {100*is_imp_a.mean():.1f}%  "
-          f"{'✅' if is_imp_a.mean() < 0.01 else '❌'}（应 ~0）")
-    print(f"② 在'implant'上的点被判成 implant 的比例 {100*is_imp_b.mean():.1f}%  "
-          f"{'✅' if is_imp_b.mean() > 0.99 else '❌'}（应 ~100）")
-    # 两张面覆盖了并集的表面：任一点到最近那张面的距离必须 ~0
+    print(f"1. points on the bone labelled implant: {100*is_imp_a.mean():.1f}%  "
+          f"{'ok' if is_imp_a.mean() < 0.01 else 'FAIL'} (should be ~0)")
+    print(f"2. points on the implant labelled implant: {100*is_imp_b.mean():.1f}%  "
+          f"{'ok' if is_imp_b.mean() > 0.99 else 'FAIL'} (should be ~100)")
+    # the two surfaces cover the union: every point's distance to the nearer one is ~0
     _, _, _, dmin = label_by_implant(np.r_[pa, pb], b, a)
-    print(f"③ 到最近那张面的最大距离 {dmin.max():.2e}  "
-          f"{'✅' if dmin.max() < 1e-9 else '❌'}（点就在面上，应为 0）")
+    print(f"3. largest distance to the nearer surface: {dmin.max():.2e}  "
+          f"{'ok' if dmin.max() < 1e-9 else 'FAIL'} (points lie on it, so it should be 0)")
 
 
 def main():
@@ -270,8 +277,10 @@ def main():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--self-test", action="store_true")
     ap.add_argument("--from-run", default="msn_skullfix/cd_rep05_full_f0",
-                    help="取哪一轮的验证颅骨（只读 run.json，不建模型、不要 GPU）")
-    ap.add_argument("--n", type=int, default=20, help="颅骨数（默认整个验证集 20 颗）")
+                    help="whose validation skulls to use; only run.json is read, no model "
+                         "is built and no GPU is needed")
+    ap.add_argument("--n", type=int, default=20, help="how many skulls (default: the whole "
+                                                     "validation set)")
     ap.add_argument("--out", default=OUT_CSV)
     args = ap.parse_args()
 
@@ -282,7 +291,8 @@ def main():
     import report as rp
     sids = rp.Run(REPO, args.from_run).meta["val_ids"][:args.n]
     raw_root = os.path.join(REPO, paths.RAW_ROOT)
-    print(f"用数据集自带的 implant 给 GT 点打真值标签（{len(sids)} 颗，每颗 4 个体数据）…")
+    print(f"labelling ground-truth points from the dataset's implant "
+          f"({len(sids)} skulls, 4 volumes each)...")
     df = analyse(REPO, sids, raw_root)
     report(df)
 

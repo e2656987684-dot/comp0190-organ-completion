@@ -1,33 +1,26 @@
-r"""Recompute eval_all_runs.csv under the implant defect region, keeping what cannot be recomputed.
+"""Recompute eval_all_runs.csv under the implant defect region, keeping what cannot be.
 
-WHY A SCRIPT AND NOT A ONE-LINER
-  This overwrites the project's most important frozen record, and the first
-  version of it was going to be an inline `python -c`. That version had a bug:
-  the merge key is (run, id), `eval_all_runs.csv` reads its `id` back as the
-  integer 83 while `eval_runs` produces the string '083', so nothing would have
-  matched and every run would have ended up in the file TWICE -- old rows under
-  the old definition sitting beside new ones, with the reader silently averaging
-  across both. That is the same leading-zero trap already fixed in three scripts
-  this week; it does not get a fourth chance.
+This overwrites the project's most important frozen record, which is why it is a
+script rather than a one-liner. The merge key is (run, id), and `id` reads back
+from CSV as an integer while evaluation produces a zero-padded string, so a naive
+merge matches nothing and every run lands in the file TWICE -- old rows under the
+old definition beside new ones, with any reader silently averaging across both.
 
-WHAT IT DOES
-  Recomputes every row it can, under the implant ground truth, and stamps each
-  row with which definition produced it:
+Every row that can be recomputed is, under the implant ground truth, and each row
+is stamped with the definition that produced it:
 
-      defect_def = "implant"      recomputed now, 2026-08-28 onwards
-      defect_def = "5mm_legacy"   kept from before, CANNOT be recomputed
+    defect_def = "implant"      recomputed now
+    defect_def = "5mm_legacy"   kept from before, CANNOT be recomputed
 
-  ⚠️ Only `baseline` and `dcd_l2` fall in the second group -- their checkpoints
-  were deleted (devlog 2026-08-24), so their defect columns are frozen under the
-  old rule forever. Both are ⛔ invalid runs excluded from the thesis anyway, so
-  no reported number mixes definitions; the column exists so that stays checkable
-  rather than remembered.
+Only runs whose checkpoints were deleted fall in the second group, and those are
+invalid runs excluded from the write-up anyway, so no reported number mixes
+definitions. The column exists so that stays checkable rather than remembered.
 
-  ⚠️ Columns that do NOT depend on the region -- CD_t, HD95, F1, DCD, clump_%,
-  spacing_CV -- are unaffected by the switch, and this verifies that rather than
-  assuming it: every recomputed row must reproduce its old values for those to
-  1e-9, and the script aborts if not. If they moved, something other than the
-  mask changed and the whole recompute is suspect.
+Warning: columns that do NOT depend on the region -- CD_t, HD95, F1, DCD,
+clump_%, spacing_CV -- are unaffected by the switch, and this verifies that rather
+than assuming it. Every recomputed row must reproduce its old values for those to
+1e-9 or the script aborts: if they moved, something other than the mask changed
+and the whole recompute is suspect.
 
     python src/eval/recompute_eval_all.py [--runs A B ...]
 """
@@ -105,7 +98,7 @@ def main():
 
     rp.defect_labels(REPO)                                   # fail now, not after 15 min of GPU
     runs = rp.load_runs(REPO, args.runs)
-    print(f"重算 {len(runs)} 个 run（缺损区 = implant 真值）…")
+    print(f"recomputing {len(runs)} runs (defect region = the implant ground truth)...")
     new = rp.eval_runs(REPO, runs)
     new["id"] = new["id"].astype(str).str.zfill(3)
     new["defect_def"] = "implant"
@@ -113,7 +106,8 @@ def main():
     # ---- the region-independent columns must not have moved ----
     key = ["run", "id"]
     j = new.merge(old, on=key, suffixes=("", "_old"))
-    print(f"\n⭐ 与旧记录重叠 {len(j)} 行，核对与掩码无关的 {len(INVARIANT)} 列：")
+    print(f"\n{len(j)} rows overlap the old record; checking the {len(INVARIANT)} columns "
+          f"that do not depend on the mask:")
     worst = 0.0
     for c in INVARIANT:
         if f"{c}_old" in j:
@@ -123,11 +117,13 @@ def main():
         bad = {c: float((j[c] - j[f"{c}_old"]).abs().max()) for c in INVARIANT
                if f"{c}_old" in j and (j[c] - j[f"{c}_old"]).abs().max() > 1e-9}
         raise SystemExit(
-            f"⛔ 与掩码无关的列发生了变化：{bad}\n"
-            f"   只换掩码不应该动这些列 —— 说明还有别的东西变了，整次重算不可信，已中止。")
-    print(f"   最大绝对差 {worst:.3e} ✅（只有缺损区那几列变了，符合预期）")
+            f"mask-independent columns moved: {bad}\n"
+            f"   Changing only the mask cannot touch these, so something else changed and "
+            f"the whole recompute is untrustworthy. Aborted.")
+    print(f"   largest absolute difference {worst:.3e} -- only the defect columns moved, "
+          f"as expected")
 
-    print(f"\n=== 缺损区各列的变化（{len(j)} 行重叠）===")
+    print(f"\n=== how the defect columns moved ({len(j)} overlapping rows) ===")
     for c in DEFECT:
         a, b = j[f"{c}_old"].mean(), j[c].mean()
         print(f"  {c:<18}{a:>10.3f} → {b:>9.3f}   {b - a:>+8.3f}"
@@ -137,23 +133,30 @@ def main():
     merged = pd.concat([old[keep.tolist()], new], ignore_index=True)
     dup = int(merged.duplicated(key).sum())
     if dup:
-        raise SystemExit(f"⛔ 合并后有 {dup} 个重复的 (run, id) —— 键没对上，已中止")
+        raise SystemExit(f"the merge produced {dup} duplicate (run, id) pairs -- the key "
+                         f"did not match. Aborted.")
     merged.to_csv(out, index=False)
 
-    print(f"\n{len(merged)} 行 -> {args.out}")
+    print(f"\n{len(merged)} rows -> {args.out}")
     print(merged.groupby("defect_def").run.nunique().to_string())
     legacy = sorted(merged[merged.defect_def == "5mm_legacy"].run.unique())
     unexpected = set(legacy) - EXPECTED_LEGACY
     if unexpected:
         raise SystemExit(
-            f"⛔ 这些 run 本该被重算，却留在了旧口径：{sorted(unexpected)}\n"
-            f"   多半是 CSV 里的标签和 run 目录名不同（如 lr_fix vs lr_fix_only），\n"
-            f"   于是旧行没被替换、和新行并存于同一文件。请核对名字后重跑。\n"
-            f"   （本次写出的文件已经是合并后的结果，需要先修掉陈旧行。）")
+            f"these runs should have been recomputed but stayed on the old definition: "
+            f"{sorted(unexpected)}\n"
+            f"   Most likely the label in the CSV differs from the run's directory name, so "
+            f"the old rows\n"
+            f"   were not replaced and now sit beside the new ones. Check the names and run "
+            f"again.\n"
+            f"   (The file just written is already the merged result, so the stale rows have "
+            f"to be fixed first.)")
     if legacy:
-        print(f"⚠️ 仍为旧口径（权重已删、再也算不出来）：{legacy}"
-              f"\n   它们是 ⛔ 错误性实验、不进论文，所以不会有数字混引；"
-              f"\n   `defect_def` 这一列就是为了让这件事可核查而不是靠记。")
+        print(f"Still on the old definition, their checkpoints being gone: {legacy}"
+              f"\n   They are invalid runs, excluded from the write-up, so no reported "
+              f"number mixes definitions;"
+              f"\n   the `defect_def` column exists so that stays checkable rather than "
+              f"remembered.")
 
 
 if __name__ == "__main__":

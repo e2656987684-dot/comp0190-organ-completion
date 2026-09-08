@@ -72,8 +72,9 @@ def defect_labels(repo):
     if path not in _LABEL_CACHE:
         if not os.path.exists(path):
             raise FileNotFoundError(
-                f"{DEFECT_LABELS} 不存在 —— 缺损区真值标签还没生成。\n"
-                f"先跑：python src/eval/make_defect_labels.py")
+                f"{DEFECT_LABELS} does not exist -- the defect ground-truth labels have "
+                f"not been generated.\n"
+                f"run first: python src/eval/make_defect_labels.py")
         _LABEL_CACHE[path] = {k: v for k, v in np.load(path).items()}
     return _LABEL_CACHE[path]
 
@@ -253,64 +254,41 @@ def metrics_from_points(pred, gt, scale_mm, inp=None, defect_mask=None):
 def _defect_metrics(P, G, I, dist1, scale_mm, gt_mask=None, defect_mm=None):
     """The same metrics, restricted to the region the input does not already show.
 
-    ⚠️ `gt_mask` IS NOW THE NORMAL WAY TO CALL THIS (2026-08-28). `eval_runs` and
-    `eval_pretrained_baseline` pass the implant ground truth from
-    `defect_labels()`. Leaving it None falls back to the old distance rule, which
-    is kept only so the two can still be compared (`defect_mask_switch.py`) --
-    do not report numbers from the fallback path beside numbers from the labels.
+    Only about 6% of ground-truth points lie in the defect; the rest is surface
+    the model was handed and merely has to reproduce, so whole-cloud numbers are
+    dominated by copying. A model that reproduced the visible surface perfectly
+    while filling the hole with garbage would still score well.
 
-    WHY: only 6.7% of ground-truth points lie in the defect -- the other 93.3% are
-    surface the model was handed in the input and merely has to reproduce. The
-    whole-cloud numbers are therefore dominated by copying, and a model that
-    reproduced the visible surface perfectly while filling the hole with garbage
-    would still score well. These columns measure the part of the task that is
-    actually hard.
+    `gt_mask` is the normal way to call this, carrying the implant ground truth.
+    Leaving it None falls back to the old distance rule, kept only so the two can
+    be compared -- do not report numbers from the fallback beside numbers from the
+    labels.
 
-    THE TWO MASKS ARE DIFFERENT, ON PURPOSE.
+    The two masks are different on purpose. On the ground-truth side a point is
+    in the defect if it sits on the implant. On the prediction side a point is in
+    the defect if it is within DEFECT_MM of a defect ground-truth point -- the
+    "far from input" rule does NOT work there, because a prediction floating above
+    intact bone also satisfies it, so that version measured how far predictions
+    drift off the surface, which other columns already cover.
 
-      ground truth : ⭐ GROUND TRUTH, not a rule. A GT point is in the defect if
-                     it sits on the implant the dataset ships -- `gt_mask`, from
-                     `defect_labels()`. Selects 6.18% of GT points (against the
-                     old rule's 6.44%). The rule it replaced scored precision
-                     0.79 / recall 0.81 against this, and its two error types
-                     nearly cancelled in COUNT while leaving the SET a third
-                     wrong; see devlog 2026-08-27/28. One error source the rule
-                     could not have fixed at any threshold: the defective volume
-                     has a freshly cut face that the complete skull does not, so
-                     0.3-0.9% of input points sit on a surface that does not
-                     exist in the ground truth, and a real defect point next to
-                     one of those reads as "input covers this".
+    That is not circular: the region is a fact about (input, ground truth), and
+    the prediction never enters its definition. Restricting a metric to a
+    truth-derived band and scoring predictions inside it is what boundary DSC
+    does too.
 
-      prediction   : a predicted point is in the defect if it is within DEFECT_MM
-                     of a defect GT point. The same "far from input" rule does
-                     NOT work here: a prediction floating 6 mm above intact bone
-                     also satisfies it, so that version silently measured how far
-                     predictions drift off the surface -- which CD_t and HD95
-                     already cover -- rather than how well the hole is filled.
-                     Measured, it inflated this column by 43% (4.37 -> 2.91 mm on
-                     cd_rep05_full) and inflated it MOST for the worst model
-                     (baseline 5.42 -> 3.01), because a poorer prediction drifts
-                     past the threshold more often.
+    Reported per direction, because the two carry different weight:
 
-    Defining the prediction's region from the ground truth is not circular: the
-    region is a fact about (input, GT), and the prediction never enters its
-    definition. Restricting a metric to a GT-derived band and then scoring
-    predictions inside it is what boundary DSC does as well.
-
-    Reported per direction rather than summed, because the two carry different
-    weight:
-
-      coverage (gt -> pred)  : of the missing surface, how close is the nearest
-                               predicted point. Cannot be gamed -- ignoring the
-                               hole makes this worse. THIS is the column that
-                               discriminates: 3.24-3.91 mm across runs, against a
-                               0.007 mm repeat difference.
-      precision (pred -> gt) : of the points placed in the defect, how close they
-                               are to the real surface. Every configuration lands
-                               at 2.89-3.01 mm, i.e. it does NOT discriminate --
-                               the models differ in how completely they cover the
-                               hole, not in how accurately they fill it. Can also
-                               be gamed by placing no points there, hence n_pred.
+      coverage (gt -> pred)   of the missing surface, how close the nearest
+                              predicted point is. Cannot be gamed -- ignoring the
+                              hole makes it worse. This is the column that
+                              discriminates between configurations.
+      precision (pred -> gt)  of the points placed in the defect, how close they
+                              are to the real surface. Every configuration lands
+                              within a few hundredths of a millimetre, so it does
+                              NOT discriminate: models differ in how completely
+                              they cover the hole, not how accurately they fill
+                              it. It is also gameable by placing no points there,
+                              hence n_pred.
     """
     from scipy.spatial import cKDTree
 
@@ -438,8 +416,9 @@ def eval_runs(repo, runs, n_skulls=None, device="/GPU:0", data=None):
                 missing = [s for s in val if s not in labels]
                 if missing:
                     raise SystemExit(
-                        f"{run.label}: 缺少这些颅骨的缺损区真值标签 {missing}\n"
-                        f"先跑：python src/eval/make_defect_labels.py")
+                        f"{run.label}: no defect ground-truth labels for these skulls: "
+                        f"{missing}\n"
+                        f"run first: python src/eval/make_defect_labels.py")
                 pos = [int(np.where(ids == sid)[0][0]) for sid in val]
                 # model.predict, NOT model(x) in a loop. Measured: calling the model
                 # directly on one sample at a time leaks 0.29 GiB per call and never
@@ -619,16 +598,16 @@ def paired_stats(df, base, other, cols=None):
 def format_paired(df, base, other, cols=None):
     """paired_stats as a plain-text table, with the direction spelled out."""
     s = paired_stats(df, base, other, cols)
-    head = (f"{other}  vs  {base}   (20 颗配对；delta = {other} − {base})\n"
-            f"{'metric':16}{'delta':>10}{'paired SE':>11}{'95% CI':>21}"
-            f"{'改善':>8}{'p_sign':>9}{'p_wilcox':>10}")
+    head = (f"{other}  vs  {base}   (paired per skull; delta = {other} - {base})\n"
+            f"{'metric':24}{'delta':>10}{'paired SE':>11}{'95% CI':>21}"
+            f"{'better':>8}{'p_sign':>9}{'p_wilcox':>10}")
     lines = [head, "-" * len(head.split("\n")[-1])]
     for m, r in s.iterrows():
-        arrow = "↓好" if m in LOWER_IS_BETTER else "↑好"
+        arrow = "(lower)" if m in LOWER_IS_BETTER else "(higher)"
         ci = f"[{r['ci_lo']:+.3f},{r['ci_hi']:+.3f}]"
         star = "  ***" if r["p_wilcoxon"] < 0.001 else ("  **" if r["p_wilcoxon"] < 0.01
                else ("  *" if r["p_wilcoxon"] < 0.05 else ""))
-        lines.append(f"{m + ' ' + arrow:16}{r['delta']:>+10.3f}{r['paired_se']:>11.3f}"
+        lines.append(f"{m + ' ' + arrow:24}{r['delta']:>+10.3f}{r['paired_se']:>11.3f}"
                      f"{ci:>21}{r['better']:>8}{r['p_sign']:>9.4f}{r['p_wilcoxon']:>10.4f}{star}")
     return "\n".join(lines)
 
@@ -693,50 +672,56 @@ def fold_frame(df, runs):
         nf = int(r.meta.get("n_folds") or 0)
         if nf <= 0:
             raise ValueError(
-                f"{r.label}: run.json 记的是 n_folds={nf}，这是单次划分的 run。\n"
-                f"它的验证集不对应任何一折，混进来会被当成一折算进均值。")
+                f"{r.label}: run.json records n_folds={nf}, so this is a single-split run. "
+                f"Its validation set corresponds to no fold, and including it would count "
+                f"as one in the means.")
         n_folds.add(nf)
         fold = r.meta.get("fold")
         m = _FOLD_TAG.match(r.label)
         if m is None:
             raise ValueError(
-                f"{r.label}: run 名里没有折号。k 折的 --run-name 要写成 "
-                f"<config>_f<fold>，例如 cd_rep05_full_f{fold}。")
+                f"{r.label}: no fold number in the run name. Name cross-validation runs "
+                f"<config>_f<fold>, for example cd_rep05_full_f{fold}.")
         if int(m.group("fold")) != int(fold):
             raise ValueError(
-                f"{r.label}: 名字里的折号是 {m.group('fold')}，而 run.json 记的是 "
-                f"fold={fold}。以 run.json 为准 —— 改名，不要改 run.json。")
+                f"{r.label}: the name says fold {m.group('fold')} while run.json records "
+                f"fold={fold}. run.json is authoritative -- rename the run, do not edit it.")
         key = (m.group("config"), int(fold))
         index[r.label] = key
         val_ids[key] = tuple(r.meta["val_ids"])
     if len(n_folds) != 1:
-        raise ValueError(f"混着不同的 --n-folds: {sorted(n_folds)}，不可一起聚合")
+        raise ValueError(f"mixed --n-folds values: {sorted(n_folds)}; these cannot be "
+                         f"aggregated together")
     k = n_folds.pop()
 
     configs = sorted({c for c, _ in index.values()})
     for c in configs:
         got = sorted(f for cc, f in index.values() if cc == c)
         if got != list(range(k)):
-            raise ValueError(f"{c}: 折号是 {got}，期望 0..{k - 1} 各一次")
+            raise ValueError(f"{c}: folds are {got}, expected 0..{k - 1} exactly once each")
     for f in range(k):
         if len({tuple(sorted(val_ids[(c, f)])) for c in configs}) != 1:
             raise ValueError(
-                f"fold {f}: 各配置的验证集不同，折均值配不起来。\n"
-                f"k 折要用同一个 --seed 和同一个 --n-folds 跑满四格。")
+                f"fold {f}: the configurations validate on different skulls, so their fold "
+                f"means cannot be paired.\n"
+                f"Every cell has to be run with the same seed and the same --n-folds.")
     seen = [i for f in range(k) for i in val_ids[(configs[0], f)]]
     if len(seen) != len(set(seen)):
-        raise ValueError("同一配置的各折验证集有重叠 —— 这不是一次干净的 k 折划分")
+        raise ValueError("one configuration's folds validate on overlapping skulls -- this "
+                         "is not a clean partition")
 
     unknown = sorted(set(df["run"]) - set(index))
     if unknown:
-        raise ValueError(f"这些 run 不在 runs 里，无从判断属于哪一折: {unknown}")
+        raise ValueError(f"these runs are not in `runs`, so their fold is unknown: {unknown}")
     if "defect_def" in df.columns:
         defs = sorted(df["defect_def"].dropna().unique())
         if len(defs) > 1:
             raise ValueError(
-                f"这张表里有两种缺损区口径 {defs} —— 不可混算，先按 defect_def 过滤")
+                f"the frame holds two defect-region definitions {defs}; filter on "
+                f"defect_def before aggregating")
         if df["defect_def"].isna().any():
-            raise ValueError("有行的 defect_def 是空的，无法确认它是哪个口径")
+            raise ValueError("some rows have an empty defect_def, so their definition "
+                             "cannot be confirmed")
 
     out = df.copy()
     out["config"] = [index[r][0] for r in out["run"]]
@@ -791,7 +776,8 @@ def fold_paired(fdf, base, other, cols=None):
     have = set(per_fold.index.get_level_values("config"))
     for name in (base, other):
         if name not in have:
-            raise ValueError(f"没有这个配置: {name}；表里有的是 {sorted(have)}")
+            raise ValueError(f"no such configuration: {name}; the frame holds "
+                             f"{sorted(have)}")
     a = per_fold.xs(base, level="config")
     b = per_fold.xs(other, level="config")
     folds = a.index.intersection(b.index)
@@ -818,17 +804,20 @@ def format_fold_paired(fdf, base, other, cols=None):
     """fold_paired as a plain-text table, with the k=5 caveat in the header."""
     s = fold_paired(fdf, base, other, cols)
     k = int(fdf["fold"].nunique())
-    head = (f"{other}  vs  {base}   （{k} 折配对；delta = {other} − {base}）\n"
-            f"⚠️ n={k}：符号检验最小可能 p = {2 * 0.5 ** k:.4f}，到不了项目的 p<0.002。"
-            f"读 t 和「改善几折」，判据是「k 折同向 且 |delta| > 2×SE」\n"
-            f"{'metric':16}{'delta':>10}{'fold SE':>10}{'95% CI(t)':>21}"
-            f"{'t':>8}{'p_t':>9}{'改善':>8}")
+    head = (f"{other}  vs  {base}   (paired over {k} folds; delta = {other} - {base})\n"
+            f"Warning: at n={k} the smallest attainable sign-test p is "
+            f"{2 * 0.5 ** k:.4f}, short of this project's bar. Read `t` and how many folds "
+            f"agree; the criterion is every fold in the same direction AND "
+            f"|delta| > 2 x SE\n"
+            f"{'metric':24}{'delta':>10}{'fold SE':>10}{'95% CI(t)':>21}"
+            f"{'t':>8}{'p_t':>9}{'better':>8}")
     lines = [head, "-" * len(head.split("\n")[-1])]
     for m, r in s.iterrows():
-        arrow = "↓好" if m in LOWER_IS_BETTER else "↑好"
+        arrow = "(lower)" if m in LOWER_IS_BETTER else "(higher)"
         ci = f"[{r['ci_lo']:+.3f},{r['ci_hi']:+.3f}]"
-        flat = "  ← 0.1mm 以下，按无可测差异读" if abs(r["delta"]) < 0.1 and "mm" in m else ""
-        lines.append(f"{m + ' ' + arrow:16}{r['delta']:>+10.3f}{r['fold_se']:>10.3f}"
+        flat = "  <- under 0.1mm, read as no measurable difference" \
+            if abs(r["delta"]) < 0.1 and "mm" in m else ""
+        lines.append(f"{m + ' ' + arrow:24}{r['delta']:>+10.3f}{r['fold_se']:>10.3f}"
                      f"{ci:>21}{r['t']:>8.2f}{r['p_t']:>9.4f}{r['better']:>8}{flat}")
     return "\n".join(lines)
 

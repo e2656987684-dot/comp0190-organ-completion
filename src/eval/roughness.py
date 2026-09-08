@@ -1,45 +1,31 @@
-r"""Archive the surface-roughness comparison that decided NOT to add a smoothness term.
+r"""Surface roughness, prediction against ground truth, at several neighbourhood sizes.
 
-WHY THIS EXISTS
-  The supervisor proposed penalising surface roughness during training. A quick
-  measurement on 2026-08-05 said there was nothing to gain -- normalised local
-  roughness came out at 0.736 for ground truth against 0.760 for the prediction,
-  i.e. the prediction is not measurably rougher than the target it is being
-  fitted to, so a smoothness prior has no headroom and pushing on it would only
-  make the surface flatter than ground truth and hurt Chamfer. That measurement
-  redirected the whole surface-quality effort onto point DENSITY instead, which
-  is where repulsion came from and is the hardest result this project has.
+This is the measurement behind the decision NOT to add a smoothness term to the
+loss: the prediction is not measurably rougher than the target it is fitted to,
+so a smoothness prior has no headroom, and pushing on it would only make the
+surface flatter than ground truth and cost Chamfer accuracy. The effort went to
+point density instead. An earlier version of this measurement was never
+committed, and it reported GT 0.736 against prediction 0.760 -- numbers this
+script exists to replace with ones that can be recomputed.
 
-  But the script that produced 0.736/0.760 was never committed, so the number
-  backing that decision could not be recomputed -- flagged in devlog 2026-08-07
-  and left standing ever since. This is that script, written so the claim can be
-  cited. Two of the project's other un-archived numbers (the sampling floor, the
-  D2 attention readings) turned out to be WRONG when finally measured properly,
-  so "it was probably fine" is not a safe assumption about the third.
+For every point: fit a plane to its k nearest neighbours, itself excluded, and
+take the absolute residual along the normal. Divide the median residual by the
+median nearest-neighbour spacing, so the two clouds compare despite differing in
+density. Ground truth and prediction go through identical code.
 
-WHAT IT MEASURES, AND WHAT THE NUMBERS ARE NOT
-  For every point: fit a plane to its k nearest neighbours (itself excluded) and
-  take the absolute residual along the normal. Divide the median residual by the
-  median nearest-neighbour spacing so the two clouds are comparable despite
-  having different densities. Ground truth and prediction go through exactly the
-  same code.
+Warning: the absolute value is NOT "how rough this surface is". A skull is a
+shell 5-7 mm thick and any usable neighbourhood reaches the far surface, so the
+fitted plane straddles both -- `spread_mm` in the output is that thickness,
+measured. Enlarging k does not escape it, it trades shell thickness for the
+skull's own curvature, which is what the k sweep shows: `spread_mm` climbs past
+the shell thickness instead of levelling off at it.
 
-  ⚠️ The absolute value is not "how rough this surface is". A skull is a shell
-  5-7 mm thick and any usable neighbourhood reaches the far surface, so the
-  fitted plane straddles both -- `spread_mm` in the output is that thickness,
-  measured. Enlarging k does not escape it, it swaps shell thickness for the
-  skull's own curvature. The k sweep below archives that argument (previously
-  also only in devlog, also from a lost script): watch `spread_mm` climb past
-  the shell thickness instead of levelling off at it.
+Warning: what survives the contamination is the ground-truth-vs-prediction
+DIFFERENCE, since the bias is largely common-mode -- though not entirely, as the
+two clouds differ in density. Report the comparison, never the absolute number.
 
-  ⚠️ What survives is the ground-truth-vs-prediction DIFFERENCE, because the bias
-  is largely common-mode. Not entirely: the two clouds differ in density, so
-  they are not contaminated to quite the same degree. Report the comparison,
-  never the absolute number.
-
-⚠️ k 折之后：只在论文引用这个比较时才需要重跑（`--runs <最终模型>`）。
-  Ground-truth roughness depends on the data alone; the prediction side depends
-  on which checkpoint is quoted.
+Ground-truth roughness depends on the data alone; the prediction side depends on
+which checkpoint is quoted.
 
     python src/eval/roughness.py [--runs A B ...] [--n 8]
 """
@@ -95,12 +81,11 @@ def analyse(repo, specs, n_skulls=8, device="/GPU:0"):
             model = msn.build_model(cfg)
             for run in group:
                 model.load_weights(run.weights)
-                # ⚠️ NOT the same 8 skulls as surface_quality.csv. That table uses
-                # "the first 8 validation skulls in `ids` order"; this uses the
-                # first 8 in `val_ids` order, as do normal_quality.py and
-                # point_to_surface.py. The two sets share exactly ONE skull, so
-                # numbers here must never be put beside surface_quality's without
-                # recomputing one of them on the other's cohort (2026-08-27).
+                # NOT the same 8 skulls as surface_quality.csv, which takes the
+                # first 8 in `ids` order while this takes the first 8 in `val_ids`
+                # order, as do normal_quality.py and point_to_surface.py. The two
+                # sets share exactly ONE skull, so numbers from here must never be
+                # placed beside surface_quality's.
                 val = run.meta["val_ids"][:n_skulls]
                 pos = [int(np.where(ids == sid)[0][0]) for sid in val]
                 x = [inputs[pos]]
@@ -134,7 +119,7 @@ def analyse(repo, specs, n_skulls=8, device="/GPU:0"):
 def report(run, rows):
     df = pd.DataFrame(rows)
     n = df["id"].nunique()
-    print(f"\n{'=' * 78}\n{run.label}   ({run.arch_label})   {n} 颗验证颅骨\n{'=' * 78}")
+    print(f"\n{'=' * 78}\n{run.label}   ({run.arch_label})   {n} validation skulls\n{'=' * 78}")
     head = (f"{'k':>5}{'rough_norm GT':>15}{'pred':>9}{'Δ':>9}{'  |':>4}"
             f"{'rough_mm GT':>13}{'pred':>8}{'  |':>4}{'spread_mm GT':>14}{'pred':>8}")
     print(head)
@@ -148,21 +133,23 @@ def report(run, rows):
     k0 = df[df["k"] == 16]
     d = (k0["rough_norm"] - k0["rough_norm_gt"])
     worse = int((d > 0).sum())
-    print(f"\n  k=16（原始论断的口径）：GT {k0['rough_norm_gt'].mean():.3f} vs "
-          f"pred {k0['rough_norm'].mean():.3f}，Δ {d.mean():+.3f} "
-          f"（{worse}/{len(d)} 颗颅骨预测更粗糙）")
-    print(f"  参照：devlog 2026-08-05 那个丢失的脚本记的是 GT 0.736 / pred 0.760、Δ +0.024")
+    print(f"\n  k=16, the size the original claim was made at: GT "
+          f"{k0['rough_norm_gt'].mean():.3f} vs pred {k0['rough_norm'].mean():.3f}, "
+          f"delta {d.mean():+.3f} ({worse}/{len(d)} skulls rougher in the prediction)")
+    print(f"  for reference, the superseded measurement was GT 0.736 / pred 0.760, delta +0.024")
 
     # The whole reason the metric was abandoned. Spread that keeps climbing means
     # the neighbourhood never settles onto one surface -- it just trades one
     # contaminant for another.
     sw = df.groupby("k")["spread_mm_gt"].mean()
-    print(f"\n  GT 邻域沿法向的展开：" +
-          " → ".join(f"k={k} {v:.2f}mm" for k, v in sw.items()))
-    print(f"  骨壳厚度约 5~7mm。若污染只来自厚度，这一列应当在 6mm 附近**走平**；"
-          f"实测 k=128 到 {sw.iloc[-1]:.2f}mm，" +
-          ("**仍在爬** → 大 k 处污染换成了曲率，**没有哪个 k 是干净的**"
-           if sw.iloc[-1] > sw.loc[24] * 1.1 else "⚠️ 走平了 —— 与 devlog 的结论不符，要重看"))
+    print(f"\n  ground-truth neighbourhood spread along the normal: " +
+          " -> ".join(f"k={k} {v:.2f}mm" for k, v in sw.items()))
+    print(f"  The shell is 5-7 mm thick. If thickness were the only contaminant this "
+          f"row would level off near 6 mm; it reaches {sw.iloc[-1]:.2f}mm at k=128, " +
+          ("still climbing -- at large k the contaminant becomes curvature, so NO "
+           "neighbourhood size is clean"
+           if sw.iloc[-1] > sw.loc[24] * 1.1 else "and has levelled off, which "
+           "contradicts the archived conclusion and needs looking at"))
 
 
 def main():
@@ -177,12 +164,10 @@ def main():
 
     out = os.path.join(REPO, args.out)
     if os.path.exists(out):
-        # ⚠️ dtype={"id": str} 是必须的，而且 astype(str) 顶不上它。
-        # `id` 是 '083' 这种带前导零的编号：不指定 dtype，pandas 读回来是整数 83，
-        # 而 str(83) == '83' != '083' —— 键仍然对不上，旧行被当成不同的行留下来。
-        # 实测 p2s.csv 就这样变成 16 行：同一批预测的两种口径并存，而且因为
-        # 「与掩码无关的列」两组逐位相同，看表的人不会察觉。
-        # （2026-08-28；本周同一个陷阱的第五次，前四次的「修复」都不够彻底。）
+        # dtype={"id": str} is required, and astype(str) does not substitute for it:
+        # ids carry a leading zero ('083'), pandas reads them back as the integer 83,
+        # and str(83) is '83'. The key then fails to match and the old rows survive
+        # as duplicates -- silently, because their other columns are identical.
         old = pd.read_csv(out, dtype={"id": str})
         KEY = ['run', 'id', 'k']
         k_old = old[KEY].astype(str).apply(tuple, axis=1)
