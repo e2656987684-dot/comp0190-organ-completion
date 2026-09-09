@@ -71,6 +71,11 @@ PRESETS = {
     "default": {"radius_mm": 6.0, "sigma": 2.5, "taubin": 60},
     # aggressive: only gross shape survives. Useful to check overall form, but
     # it will hide real surface defects too -- do not judge quality from this.
+    # ⚠️ sigma is in VOXELS, so this preset gets stronger as `res` drops. Below
+    # about res=96 it perforates a cranial vault: the blurred field rises above
+    # the isolevel across a thin shell and marching cubes opens a hole that is
+    # not in the points. Measured on GT skull 039, same preset, res only --
+    # Euler characteristic 0 at res=64 (holed) against 2 at res=128 (closed).
     "heavy":   {"radius_mm": 7.0, "sigma": 4.0, "taubin": 120},
 }
 
@@ -98,6 +103,12 @@ CLUMP_MM = 2.0
 CAMERAS = {
     "default": dict(x=0.0, y=-1.5, z=1.15),
     "defect": dict(x=0.02, y=1.30, z=1.46),
+    # Azimuth 225 deg, elevation 15 deg: the three-quarter view anatomy is read
+    # from -- orbit, zygomatic arch, temporal region and vault all visible at
+    # once, so two panels can be compared as skulls rather than as blobs.
+    # "default" and "defect" both look at the back of the head, where a cranium
+    # has no landmarks; picked by rendering an 8-azimuth x 2-elevation sweep.
+    "three_quarter": dict(x=-1.297, y=-1.297, z=0.492),
 }
 
 
@@ -342,6 +353,11 @@ def fig_smoothing_ladder(points, scale_mm, levels=("raw", "light", "default", "h
     NOT a comparison tool. Two models rendered through this will differ by
     whatever the reconstruction does, so use it on one cloud at a time; model
     comparison goes through `fig_meshes` at the locked RECON settings.
+
+    ⚠️ Lowering `res` strengthens every rung, because PRESETS give sigma in
+    voxels. At res=64 the "heavy" rung opens a hole through the cranial vault
+    even on ground truth -- see the note on that preset. Read a perforated
+    panel as "this res is too coarse for this sigma", never as a defect.
 
     A single level can be passed as a bare string: levels="raw" behaves the
     same as levels=("raw",). Without this, the missing-comma version is a

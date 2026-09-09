@@ -55,7 +55,12 @@ RUNS = [
 # repulsion nearly removes it. Replaces the old baseline/lr_fix/rep_w05 trio,
 # whose first panel crossed the validity boundary.
 DENSITY_RUNS = ["cd_only_f0", "lr_fix_only_f0", "cd_rep05_full_f0"]
-SHOW_SKULL = None          # None -> first validation skull
+# The MEDIAN skull of fold 0 by defect coverage (3.17 mm against a fold median
+# of 3.10), which is the rule the surface notebook already follows: rendering the
+# best skull flatters the model and the first validation id picks whatever the
+# split happened to put first -- 083, which is rank 16 of 20. Fixing it here also
+# makes every figure in reports/ show the same skull as that notebook's.
+SHOW_SKULL = "039"
 SCALE = 2                  # PNG upscale, so text stays sharp when projected
 C_PRED = "#1565C0"
 WARN_HEX = "#B73B1F"
@@ -64,6 +69,17 @@ WARN_HEX = "#B73B1F"
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--out", default=os.path.join(REPO, "reports", "figures"))
+    # mesh.png only. "default" is what every archived figure used and is nearly
+    # orthogonal to the defect direction, so a defective and a complete skull
+    # render almost identically; "defect" faces the hole. Both are in
+    # mesh_viz.CAMERAS, which is a locked constant -- a comparison figure has to
+    # keep one viewpoint throughout, and the choice belongs to the caller.
+    # three_quarter, not the library default: "default" looks at the back of the
+    # head, where the two panels are featureless and indistinguishable. The
+    # camera changes nothing measured -- but the same one is used for every
+    # panel, which is the rule that matters (mesh_viz.CAMERAS).
+    ap.add_argument("--camera", default="three_quarter",
+                    choices=sorted(("default", "defect", "three_quarter")))
     args = ap.parse_args()
     os.makedirs(args.out, exist_ok=True)
 
@@ -144,7 +160,8 @@ def main():
     best = DENSITY_RUNS[-1]
     save(mv.fig_meshes([(mv.pc_to_mesh(gt[k], s), "ground truth"),
                         (mv.pc_to_mesh(preds[best], s), best)],
-                       title=f"skull_{ids[k]} — reconstructed surface", height=460),
+                       title=f"skull_{ids[k]} — reconstructed surface", height=460,
+                       camera=args.camera),
          "mesh.png", w=1100)
 
     # ---- 5. defective input -> prediction -> ground truth --------------------

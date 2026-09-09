@@ -1,0 +1,19 @@
+run                cd_rep05_full_f0  (paper)
+text constant c    dim 4096, 104 non-zero, ||c|| = 1.7484
+  D1-STA1: ||b|| = 0.0540 -> folded ||b'|| = 1.5866   (||Δ|| = 1.5492)
+  D1-STA2: ||b|| = 0.0493 -> folded ||b'|| = 1.3056   (||Δ|| = 1.2747)
+  D1-STA3: ||b|| = 0.0538 -> folded ||b'|| = 1.1339   (||Δ|| = 1.1042)
+  D1-STA4: ||b|| = 0.0507 -> folded ||b'|| = 1.1852   (||Δ|| = 1.1583)
+
+compared on        5 validation skulls, 6144 points each
+max |Δ|            5.445e-05 normalised  =  0.005921 mm
+mean |Δ|           9.640e-07 normalised  =  0.000105 mm
+prediction scale   coordinates span 1.912 normalised units
+
+and at the level of the reported metric:
+  skull     CD_t original  CD_t folded        diff
+  083         7.915240     7.915246    6.18e-06
+  053         8.412500     8.412493    6.40e-06
+  070         6.181580     6.181579    1.01e-06
+
+EQUIVALENT: the text branch's 3,149,824 parameters are four bias vectors
