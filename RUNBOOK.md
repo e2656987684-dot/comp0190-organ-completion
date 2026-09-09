@@ -1,0 +1,191 @@
+# RUNBOOK — 所有要在终端敲的命令，按「我现在要干嘛」排
+
+这份是**任务索引**。按文件查（每个脚本写不写文件、要不要 GPU、耗时）看
+[`src/eval/README.md`](src/eval/README.md)；规矩和判读口径看
+[`CLAUDE.md`](CLAUDE.md)。**同一个命令只在这里写一次，改了要同步。**
+
+```bash
+cd /root/comp0190-organ-completion
+PY=/root/miniconda3/envs/comp0190-msn/bin/python
+```
+
+> ⚠️ **需要 GPU 的命令跑之前先 Restart notebook 的 kernel。** 一个 187M 模型占
+> 15.5 / 24 GiB，kernel 占着显存时脚本直接 OOM。下面标了 🎮 的都要。
+>
+> ⚠️ **能在 notebook 里看的就别在终端看。** 终端适合"算"，notebook 适合"读"——
+> 读 CSV、出表、配对检验、看图，全都该在 `MSN_eval_metrics.ipynb` 里。
+> 终端只在两种情况下必需：① 训练（几十分钟，kernel 断了就没了）② 抢显存的脚本。
+
+---
+
+## 0. 换了机器 / 重部署之后
+
+```bash
+bash setup_env.sh                     # conda 环境 + 权重软链 + 出图依赖
+bash sync_workspace.sh restore        # 从 /workspace 取回 data/ 和 experiments/
+```
+
+⚠️ `/root` 是临时盘。**代码靠 git，产物和数据靠 `sync_workspace.sh`，两者互补。**
+⚠️ `setup_env.sh` 第 5 节装的无头 Chrome 也在 `/root` —— 不重跑就一张论文图都出不来。
+
+备份（跑完重要实验就做一次）：
+
+```bash
+bash sync_workspace.sh backup
+```
+
+---
+
+## 1. 跑训练
+
+单次实验 → 用 [`notebooks/MSN_train_skullfix.ipynb`](notebooks/MSN_train_skullfix.ipynb)
+第 1 节控制面板，它会把命令打印出来。重复实验**必须** `--from-run`，别手抄 flag。
+
+### k 折（4 配置 × 5 折 = 20 个，约 17~20 小时）🎮
+
+**一个模型跑完它的 5 折，你手动切下一个**：
+
+```bash
+tmux new -s kfold
+$PY src/models/run_kfold.py --dry-run cd_only   # 看计划
+$PY src/models/run_kfold.py cd_only             # 5 折，约 4~5 小时；跑完打印小结
+$PY src/models/run_kfold.py lr_fix_only         # 看完结果再切下一个
+$PY src/models/run_kfold.py rep_w05
+$PY src/models/run_kfold.py cd_rep05_full
+```
+
+撞 `--epochs` 上限或磁盘不足会**中止**；每轮自动自检+存档；断了重跑同一条就续上。
+⚠️ 按模型走的代价：**第二个模型跑完之前没有可比对象**。想按折走用 `--all`。
+
+**手动一条条跑（含 notebook 控制面板写法）全在 [`KFOLD.md`](KFOLD.md)** —— 带编号、标了每条是 2×2 里的哪一格、
+验证哪 20 颗颅骨，还有每跑完一个的自检与存档命令、进度表、已知的坑。
+⚠️ **命令只在那份文件里写一份**，这里不重复。
+
+开跑前三条：在 `tmux` 里跑（断线不丢）· Restart notebook 的 kernel（显存）·
+`bash sync_workspace.sh backup`（`/root` 是临时盘）。
+
+---
+
+## 2. 判读结果 → **在 notebook 里**
+
+[`notebooks/MSN_eval_metrics.ipynb`](notebooks/MSN_eval_metrics.ipynb)：第 4 节 2×2 折均值 →
+第 5 节四条边 → 第 6 节缺损区 vs 全点云 → 第 7 节同轮次表，对着第 3 节的判读口径读。
+
+⭐ **第 1~8 节读冻结的 `eval_all_runs.csv`，不建模型** —— 不要 GPU、不要权重、不要 `data/`。
+只有第 9 节（可选、默认关闭）会重算一折做对账。
+
+想在终端快速扫一眼各 run 的数字：
+
+```bash
+$PY -c "
+import pandas as pd
+df = pd.read_csv('experiments_log/eval_all_runs.csv', dtype={'id': str})
+df = df[df.defect_def == 'implant']      # ⚠️ 排掉 5mm 旧口径的两行
+print(df.groupby('run', sort=False)[['CD_t_mm','defect_cov_mm','clump_%']].mean().round(3).to_string())"
+```
+
+⚠️ k 折之后 `paired_stats` 不适用，改用 `fold_frame` / `fold_summary` / `fold_paired`
+（notebook 第 4~6 节已经这么做了）。
+
+---
+
+## 3. 看 mesh（三维图）
+
+```bash
+$PY src/eval/mesh_preview.py --skull 070 --truth              # 🎮 出 PNG，约 1 分钟
+$PY src/eval/mesh_preview.py --skull 070 --truth --html       # 再多写一份可旋转的
+```
+
+结果在 `reports/preview/<run>_<skull>.png`（约 1 MB，编辑器直接打开）。
+
+**想自己转角度**：用 [`notebooks/MSN_eval_surface.ipynb`](notebooks/MSN_eval_surface.ipynb)
+第 4.1~4.3 节 —— 4.1 四格内联、4.2 拖动并把角度存成具名视角、4.3 出高分辨率 PNG。
+⚠️ 4.2 需要 `anywidget`；没装会退化成静态图，不影响后面的格子。
+
+⚠️ 挑颅骨：**只看最好的那颗会高估**。notebook 第 3 节会把该折的逐颅骨排名打出来，
+`SKULL = None` 默认渲染**中位那颗**（不是最好那颗）。折 0 的 `cd_rep05_full_f0` 实测：
+好 `000/031/070`（2.45~2.69）、中位 `030/039`（3.02/3.17）、⚠️ 离群 `053`（**4.77**）。
+
+---
+
+## 4. 重算主表（换口径、或 k 折之后）🎮
+
+```bash
+$PY src/eval/recompute_eval_all.py            # 约 15 分钟，合并写 eval_all_runs.csv
+```
+
+带「与掩码无关的列必须逐位不变」的断言。⚠️ **整表重算走它，不要用 notebook 第 6.1 节**
+（那个只负责归档）。
+
+---
+
+## 5. 一次性研究脚本（结论已定，一般不用再跑）
+
+| 命令 | 产出 | GPU | 耗时 | k 折后 |
+|---|---|---|---|---|
+| `$PY src/eval/sampling_floor.py` | `sampling_floor.csv` | ❌ | 3~4 分 | ❌ 不用 |
+| `$PY src/eval/defect_mask_audit.py` | `defect_mask.csv` | ❌ | 7 分 | ❌ 不用 |
+| `$PY src/eval/normal_quality.py` | `normal_quality.csv` | ❌ | 2~4 分 | ❌ 不用 |
+| `$PY src/eval/make_defect_labels.py` | `defect_mask_labels.npz` | ❌ | 35 分 | ❌ 已备齐 100 颗 |
+| `$PY src/eval/attention_collapse.py` | `attention_collapse.csv` | 🎮 | 3~5 分 | ✅ 每个最终模型 |
+| `$PY src/eval/point_to_surface.py` | `p2s.csv` | 🎮 | 3~5 分 | ✅ 必须 |
+| `$PY src/eval/roughness.py` | `roughness.csv` | 🎮 | 1 分 | ⚠️ 只在引用时 |
+| `$PY src/eval/fold_text_branch.py` | 只打印，用 `tee` 落盘 | 🎮 | 40 秒 | ⚠️ 建议 |
+| `$PY src/eval/eval_pretrained_baseline.py` | `eval_val20_x5.csv` | 🎮 | 十几分 | ✅ 每折各一次 |
+
+完整的「换了模型之后哪些产物要重算」在 [`experiments_log/README.md`](experiments_log/README.md)。
+⚠️ `src/eval/README.md` 2026-09-08 起是**对外的英文说明**（脚本是什么、怎么跑），不再装这张表。
+
+---
+
+## 6. 出论文图 🎮
+
+```bash
+$PY src/eval/make_report_figures.py           # -> reports/figures/ 七张 PNG + summary.csv
+$PY src/eval/mesh_preview.py --run cd_rep05_full_f0 --skull 039 --truth \
+    --camera defect --out reports/figures/defect_4panel   # 缺损四格图
+```
+
+⚠️ 需要无头 Chrome（`setup_env.sh` 第 5 节）。**3D 用 PNG，2D 曲线用 SVG/PDF**
+（矢量，放大不糊）。`RUNS` 现在指向干净 2×2 —— **哪几个 run 讲故事是叙事选择，写论文时随便改。**
+
+**颅骨**：`SHOW_SKULL = "039"`，折 0 的**中位**那颗（3.17mm，折中位 3.10），
+与 `MSN_eval_surface.ipynb` 用的是同一颗。⚠️ 原来是 `None` → 取验证集第一颗 = 083，
+而 083 排 16/20，选法没有原则可言。
+
+**相机**：`--camera {three_quarter,default,defect}`，只影响 `mesh.png`。
+默认 `three_quarter`（方位角 225°、仰角 15°）—— `default` 和 `defect` 都看后脑勺，
+两格是没有地标的光板，换成三四分之一视角后眼眶、颧弓、颞区、颅顶同时可见。
+⚠️ **换的是整张图的视角，不是逐格调参**；同一张对比图从头到尾一个相机这条规矩没破。
+
+⚠️ **缺损看不看得见和相机无关**：`mesh.png` 两格都是**补全后的完整颅骨**，本来就没有洞。
+要展示洞用上面那条 `mesh_preview` 的四格（缺损体数据 / 缺损输入 / 补全 / 完整体数据），
+或 `completion.png` —— 后者自己按缺损质心算相机，不用管 `--camera`。
+
+### 没有 GPU 的机器上（下本地之后）
+
+补全类的图不需要权重了 —— `experiments_log/preds_fold0.npz` 存着折 0 四个配置
+× 20 颗验证颅骨的预测（5.5 MB，实测能逐位还原冻结的 `defect_cov_mm`）：
+
+```bash
+$PY -c "
+import numpy as np
+P = np.load('experiments_log/preds_fold0.npz')
+print(P.files)                      # ids · scale_mm · 四个配置名
+print(P['cd_rep05_full'].shape)     # (20, 6144, 3)"
+```
+
+⚠️ 四格图仍然要原始 nrrd（`data/14161307/`，不在 git 里）。
+
+---
+
+## 7. 提交之前
+
+```bash
+git status --short
+```
+
+⚠️ **notebook 的大图输出别提交**（硬规则 3，见 [`notebooks/README.md`](notebooks/README.md)）。
+⚠️ **先关掉 VS Code 里那个 notebook 标签页再清输出** —— 编辑器会把内存里带输出的版本
+存回去，清了等于白清（2026-09-09 栽过一次）。
+⛔ 清之前先看图里画的是谁 —— 权重已删的 run（`baseline` / `dcd_l2`）的图**再也生成不出来**。

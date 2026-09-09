@@ -1,0 +1,29 @@
+{
+  // Ctrl+Shift+P -> "Tasks: Run Task" 选一个跑。
+  // 「备份到 workspace」设成了默认 build 任务，可以直接按 Ctrl+Shift+B。
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "备份到 workspace（关机前）",
+      "type": "shell",
+      "command": "bash ${workspaceFolder}/sync_workspace.sh backup",
+      "group": { "kind": "build", "isDefault": true },
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "预演备份（--dry-run，不真传）",
+      "type": "shell",
+      "command": "bash ${workspaceFolder}/sync_workspace.sh backup --dry-run",
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "从 workspace 恢复",
+      "type": "shell",
+      "command": "bash ${workspaceFolder}/sync_workspace.sh restore",
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true },
+      "problemMatcher": []
+    }
+  ]
+}

@@ -217,11 +217,17 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-# Data and large files, never committed.
+# The raw dataset only. SkullFix derives from CQ500 under CC BY-NC-SA 4.0 and
+# this repository is public, so the volumes stay out: git history is permanent,
+# and README promises they are not redistributed here. Everything DERIVED from
+# them -- the point-cloud cache, the per-point defect labels, the cached
+# predictions -- is small and is tracked, which is what makes the results
+# checkable without the dataset.
+#
 # The leading slash is required: without it the rule matches a data/ directory at
 # any depth, including src/data/, and silently ignores source files that belong
 # in the repository. A script was lost that way once.
-/data/
+/data/14161307/
 *.stl
 *.nrrd
 *.nii
@@ -236,30 +242,32 @@ __marimo__/
 # -- so without this line, losing the raw data means losing the ability to
 # recompute any historical metric.
 !experiments_log/defect_mask_labels.npz
+# ...and the point-cloud cache, which is what training and evaluation actually
+# read. 12 MB of 4096/6144-point clouds, rebuildable from the raw volumes by
+# prepare_skullfix.py bit for bit -- tracked so that a clone without the dataset
+# can still recompute every metric.
+!data/cache/*.npz
+# ...and the cached fold-0 predictions. 6 MB, and they are what lets a machine
+# with no GPU and no checkpoints redraw every figure that shows a completion.
+!experiments_log/preds_fold0.npz
 *.npy
+# ...except the frozen BERT output, 3 KB. The text branch is trainable=False over
+# a single class, so its output is a constant -- every model needs this vector at
+# inference and nothing can recompute it without the 110M-parameter encoder.
+!data/cache/bert_skull.npy
 *.pth
 *.ckpt
 *.h5
 experiments/
-# Rendered figures are ignored by default, so that re-running the figure script
-# does not sweep a pile of new images into the index. The delivered ones are
-# force-added instead.
-#
-# The rule originally assumed every figure could be regenerated from the archived
-# runs. That stopped being true once checkpoints were pruned: some figures depend
-# on runs whose weights are gone, and training is not bit-reproducible, so they
-# cannot be redrawn. Storing a few megabytes of finished figures is cheaper than
-# keeping gigabytes of superseded weights to preserve the option.
-reports/figures/*.png
+# The upstream released weights, 1.2 GB and not ours to redistribute.
+msn_downloads/
+# Figures are tracked. They used to be ignored and force-added, on the assumption
+# that any of them could be redrawn on demand; that stopped being true once
+# checkpoints were pruned, and stops being true entirely off the GPU machine.
+# A few megabytes of finished figures is cheaper than the alternative.
 reports/*.pptx
-# mesh_preview.py's HTML output: 20-40 MB each, something to look at rather than
-# a deliverable.
-reports/preview/
 
-# Specific to one deployment rather than to the project: personal environment
-# setup, the backup script for this machine's network disk, the command sheet
-# that goes with them, and the editor tasks that drive them.
-setup_local.sh
-sync_workspace.sh
-RUNBOOK.md
-.vscode/tasks.json
+# Deployment-specific and tracked anyway: RUNBOOK.md is the command sheet for the
+# whole project, and the two scripts document how this machine was set up. They
+# carry absolute paths for one pod -- read them as a record, not as something to
+# run unchanged.

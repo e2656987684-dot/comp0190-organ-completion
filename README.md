@@ -72,9 +72,17 @@ reports/      figures for the write-up
 Each directory has its own README with the detail: [`src/models/`](src/models/README.md),
 [`src/eval/`](src/eval/README.md), [`notebooks/`](notebooks/README.md).
 
-`data/`, `experiments/` and `msn_downloads/` are git-ignored — raw volumes,
-checkpoints and the released weights are all large and none of them are
-redistributed here.
+Two things are git-ignored: `experiments/` and `msn_downloads/`, which hold the
+checkpoints and the upstream released weights, and `data/14161307/`, the raw
+SkullFix volumes. None of them are redistributed here.
+
+Everything *derived* from the volumes is tracked, and it is deliberately enough
+to check the work without them: the point-cloud cache the model actually reads
+(`data/cache/`, 12 MB), the per-point defect labels, the per-skull metrics, and
+`experiments_log/preds_fold0.npz` — fold 0's predictions for all four loss
+configurations over its twenty validation skulls, 5.5 MB, which reproduce the
+frozen `defect_cov_mm` exactly. With those, every figure showing a completion
+redraws on a laptop with no GPU and no checkpoints.
 
 ### Where configuration lives
 
@@ -97,7 +105,9 @@ baseline comparison.
 
 ## Data
 
-`data/` is git-ignored, so a fresh clone has none.
+The raw volumes are git-ignored, so a fresh clone has none of them. It does have
+`data/cache/`, which is what training and evaluation read — the volumes are only
+needed to rebuild that cache or to render a raw-voxel panel.
 
 Download **SkullFix** from
 [Figshare 14161307](https://figshare.com/articles/dataset/SkullFix_-_MICCAI_AutoImplant_2020_Challenge_Dataset/14161307)
