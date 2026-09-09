@@ -1,44 +1,22 @@
-"""Measure the error floor imposed by representing a skull with N points.
+"""Measure the error floor that representing a skull with N points imposes.
 
-WHAT IT MEASURES
-  Every metric in this project compares two point clouds, but the ground truth is
-  only a SAMPLE of a continuous surface -- 6144 points drawn from a marching-cubes
-  mesh -- and so is any prediction. Two independent samplings of the SAME surface
-  therefore differ from each other even though neither has any model error at all.
-  That difference is the floor: no model, however good, can score below it.
+Every metric here compares two point clouds, but the ground truth is only a
+SAMPLE of a continuous surface, and so is any prediction. Two independent
+samplings of the SAME surface differ even though neither carries model error.
+That difference is the floor: no model can score below it, and it is what makes a
+comparison against voxel-domain results apples-to-oranges rather than a defeat.
 
-  Method: read the complete skull's volume, run marching cubes ONCE, then sample
-  its surface twice with different seeds, farthest-point-sample each draw down to
-  N points, and score one against the other exactly as a prediction is scored.
+Method: read the complete skull's volume, run marching cubes once, sample its
+surface twice with different seeds, farthest-point-sample each draw down to N,
+and score one against the other exactly as a prediction is scored.
 
-WHY IT HAS TO BE WRITTEN DOWN
-  The thesis needs this number for three separate arguments:
-    * a reader who puts CD_t 6.36 mm next to AutoImplant's HD95 1.52 mm (a 0.45 mm
-      voxel grid) concludes the method is poor. The floor is what makes that an
-      apples-to-oranges comparison rather than a defeat;
-    * it bounds what is left to win. Defect coverage sits at 3.24 mm against a
-      one-directional floor of 2.31 mm -- 0.93 mm of headroom -- which is why
-      chasing that column further was dropped;
-    * "our numbers cannot be placed beside voxel-domain results" is otherwise an
-      excuse. With this it is a measurement.
-  Until 2026-08-25 the figures (CD_t 4.43 mm, HD95 3.79 mm) existed only as prose
-  in the devlog, from a script that was never committed -- the same trap that made
-  the roughness and attention-collapse numbers unciteable. Measured properly over
-  all 100 skulls they come out HIGHER: CD_t 4.619 +- 0.252, HD95 3.974 +- 0.214,
-  one-directional 2.310 +- 0.126 mm. That gap is 7.5 standard errors, so it is a
-  methodological difference from the lost script rather than sampling variation --
-  and it moves in the direction that credits the model LESS, not more.
+It depends on the data and the point count only -- no model, no weights, no
+split -- so it never needs recomputing when the models change, and running it
+over all 100 skulls (the default) makes it fold-independent by construction.
 
-⚠️ k 折之后**不需要**重跑。
-  This depends on the DATA and the point count only: no model, no weights, no
-  train/validation split. Changing the split cannot move it. Run it over all 100
-  skulls (the default) and the number is fold-independent by construction --
-  which is exactly why it is worth measuring that way rather than over one
-  validation set of 20.
-
-    python src/eval/sampling_floor.py                      # all 100 skulls, 6144 points
-    python src/eval/sampling_floor.py --n-out 3072,6144,12288   # floor vs point count
-    python src/eval/sampling_floor.py --n-skulls 2         # smoke test
+    python src/eval/sampling_floor.py                          # 100 skulls, 6144 points
+    python src/eval/sampling_floor.py --n-out 3072,6144,12288  # floor against point count
+    python src/eval/sampling_floor.py --n-skulls 2             # smoke test
 """
 
 from __future__ import annotations
@@ -144,15 +122,19 @@ def main():
     os.makedirs(os.path.dirname(args.out), exist_ok=True)
     df.to_csv(args.out, index=False)
 
-    print(f"\n{len(files)} 颗完整颅骨 × {args.repeats} 对独立采样  ->  {os.path.relpath(args.out, REPO)}")
-    print(f"\n{'点数':>8}{'CD_t 地板':>12}{'(std)':>9}{'单向':>10}{'HD95 地板':>12}{'(std)':>9}")
+    print(f"\n{len(files)} complete skulls x {args.repeats} independent pairs"
+          f"  ->  {os.path.relpath(args.out, REPO)}")
+    print(f"\n{'points':>8}{'CD_t floor':>12}{'(std)':>9}{'one-way':>10}"
+          f"{'HD95 floor':>12}{'(std)':>9}")
     print("-" * 60)
     for n_out, g in df.groupby("n_out"):
         print(f"{n_out:>8}{g['CD_t_mm'].mean():>12.3f}{g['CD_t_mm'].std(ddof=1):>9.3f}"
               f"{g['one_way_mm'].mean():>10.3f}{g['HD95_mm'].mean():>12.3f}"
               f"{g['HD95_mm'].std(ddof=1):>9.3f}")
-    print("\n单位 mm。**没有模型参与** —— 这是同一张网格采两次的差异，任何模型都低不过它。")
-    print("⚠️ k 折之后不需要重跑：它只依赖数据和点数，与划分、权重都无关。")
+    print("\nMillimetres. NO MODEL IS INVOLVED -- this is one mesh sampled twice, and "
+          "no model can score below it.")
+    print("It depends only on the data and the point count, so it does not need "
+          "recomputing when the models change.")
 
 
 if __name__ == "__main__":

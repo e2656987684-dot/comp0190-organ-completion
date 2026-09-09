@@ -701,15 +701,15 @@ mkdir -p experiments_log/$RUN && cp experiments/msn_skullfix/$RUN/{run.json,hist
 
 ## 20 个全部跑完之后
 
-1. **算主表**（🎮 约 25~30 分钟）—— `report.eval_runs` + `fold_frame` / `fold_summary` /
-   `fold_paired`，用法见 [`src/eval/README.md`](src/eval/README.md)
+1. **算主表**（🎮 约 25~30 分钟）—— `python src/eval/recompute_eval_all.py`，
+   它默认就是那 20 个折，并带「与掩码无关的列必须逐位不变」的断言
 2. **基线每折各评一次**：`eval_pretrained_baseline.py --split-from <fold run>`
    —— 基线必须在**和它对比的模型同一批颅骨**上评
 3. `p2s.csv` / `attention_collapse.csv` 按最终模型重跑
 4. `bash sync_workspace.sh backup`
 
-⚠️ `MSN_compare_runs.ipynb` 第 1 节那条 assert 会拦下你（各折验证集不同，故意的）——
-notebook 的 k 折读表一节还没写，先用脚本读。
+✅ **2026-09-08：`MSN_eval_metrics.ipynb` 已经是 k 折读表本。** 主表算完就打开它 ——
+第 4 节 2×2、第 5 节四条边、第 6 节缺损区 vs 全点云。前 8 节读冻结的 CSV，不建模型。
 
 ---
 

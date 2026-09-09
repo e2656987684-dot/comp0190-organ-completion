@@ -1,26 +1,26 @@
-# 现在是本项目唯一用的环境（comp0190-msn），覆盖：notebooks/explore_skull.ipynb、
-# src/data/prepare_skullfix.py，以及 notebooks/demo/ 里那两个 MSN
-# (PCT + BERT 多模态点云自编码器) demo notebook。
-# 曾经跟一个额外的 comp0190（torch）环境分开装，是为了跟 torch 彻底隔离——
-# 同一个环境里同时装 tensorflow[and-cuda] 和 torch，两边的 nvidia-nccl
-# 包（cu12 / cu13）会装到同一个物理路径互相覆盖，导致 torch 崩掉。当前代码库
-# 完全没有用到 torch，那个环境已删除；以后真要接回 torch 记得重新拆分。
+# The one environment this project uses: notebooks, data preparation, training
+# and evaluation all run in it.
 #
-# 版本限制的原因：
-#   - Python 必须是 3.11：PyPI 上 tensorflow<2.16 没有 cp312 wheel。
-#   - tensorflow 必须 <2.16：这是 transformers 官方验证过的、还带 TFBertModel
-#     的最后一档 TF 版本；更高版本的 TF 默认 Keras 3，需要 numpy>=2，
-#     跟这里 numpy<2 的要求冲突。
-#   - transformers 必须 <5：5.0 开始彻底砍掉了 TensorFlow 后端（TFBertModel 等）。
-#   - [and-cuda] extra 让 tensorflow 自带匹配的 CUDA 12 库，否则找不到 GPU。
-#   - hf_transfer：这台机器全局开了 HF_HUB_ENABLE_HF_TRANSFER=1（加速 HuggingFace
-#     下载），不装这个包的话 TFBertModel.from_pretrained 会直接报错退出。
+# Why the versions are pinned:
+#   - Python must be 3.11: PyPI has no cp312 wheel for tensorflow<2.16.
+#   - tensorflow must be <2.16: this is the last version transformers validates
+#     against that still ships TFBertModel. Later versions default to Keras 3,
+#     which needs numpy>=2 and conflicts with the numpy<2 requirement here.
+#   - transformers must be <5: 5.0 removed the TensorFlow backend entirely.
+#   - the [and-cuda] extra brings the matching CUDA 12 libraries; without it
+#     tensorflow does not find the GPU.
+#
+# Warning: do not add torch to this environment. tensorflow[and-cuda] and torch
+# ship nvidia-nccl packages for different CUDA majors that install to the same
+# path and overwrite each other, which breaks torch at import. Use a separate
+# environment if torch is ever needed.
 numpy<2
 trimesh
-# rtree（2026-08-27 加）：trimesh 的加速最近点查询 closest_point 需要它。
-# 本项目不用它算指标（src/eval/point_to_surface.py 自己实现的版本快约 20 倍），
-# 只用它做**独立对账** —— 每次运行在第一颗颅骨上核对 200 个点，实测最大差 4.4e-16mm。
-# 没装也能跑，那道对账会被跳过并打印提示。
+# rtree gives trimesh its accelerated closest-point query. It is not used to
+# compute any reported metric -- src/eval/point_to_surface.py has its own
+# implementation about 20x faster -- only as an INDEPENDENT cross-check, which
+# each run performs on 200 points and which agrees to 4.4e-16 mm. Without it that
+# check is skipped and the run continues.
 rtree
 pynrrd
 plotly
@@ -31,6 +31,9 @@ ipywidgets
 tensorflow[and-cuda]<2.16
 transformers<5
 kaleido
+# hf_transfer is required when HF_HUB_ENABLE_HF_TRANSFER=1 is set in the
+# environment, as some container images do; loading a pretrained model fails
+# outright without it.
 hf_transfer
 nbformat>=4.2.0
 pandas

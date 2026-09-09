@@ -1,55 +1,42 @@
-r"""Can point normals be estimated well enough for surface reconstruction? (Poisson gate)
+"""Can point normals be estimated well enough for surface reconstruction?
 
-WHY THIS RUNS BEFORE ANY POISSON WORK
-  Screened Poisson reconstruction does not take points, it takes points WITH
-  ORIENTED NORMALS, and the normals have to be estimated from the cloud itself
-  because a prediction comes with nothing else. This script measures whether
-  that estimation is even possible on this data, because there is a specific
-  reason to expect it is not:
+Screened Poisson reconstruction does not take points, it takes points with
+ORIENTED NORMALS, and those have to be estimated from the cloud itself because a
+prediction comes with nothing else. This measures whether that estimation is even
+possible on this data, and there is a specific reason to expect it is not:
 
-      a skull is a shell 5-7 mm thick, and the clouds are sampled at ~4 mm
+    a skull is a shell 5-7 mm thick, and the clouds are sampled at about 4 mm
 
-  So a neighbourhood large enough to fit a plane to also reaches the OPPOSITE
-  sheet of the shell, whose surface faces the other way. Already measured, on
-  ground truth, by `roughness.py`: the neighbourhood's spread along its own
-  normal is 5.44 mm at k=8 and 7.87 mm at k=16 -- i.e. the same order as the
-  shell thickness, at every k that is usable.
+so a neighbourhood large enough to fit a plane to also reaches the OPPOSITE sheet
+of the shell, which faces the other way. If normals cannot be recovered, Poisson
+cannot work, no reconstruction floor needs measuring, and the answer is a measured
+negative rather than a table of numbers dominated by a reconstructor.
 
-  If normals cannot be recovered, Poisson cannot work, no reconstruction floor
-  needs measuring, and TODO 9 ends with a measured negative instead of a table
-  of numbers dominated by a reconstructor. That is a cheap answer to buy: this
-  script needs no GPU and no new dependencies (open3d is NOT installed, and
-  putting it in the environment that holds TF 2.15 + numpy 1.26 is a risk worth
-  avoiding unless something is going to be built on it).
+Two failure modes, and they are different:
 
-TWO WAYS IT CAN FAIL, AND THEY ARE DIFFERENT
   unoriented   the fitted plane itself is wrong, because the neighbourhood
-               straddles both sheets. Measured as the angle to the true normal
-               ignoring sign: `ang_unoriented`.
-  orientation  the plane is right but the SIGN propagates across the gap
-               between the sheets and comes out inside-out over a patch.
-               Measured by running the standard consistent-orientation pass
-               (minimum spanning tree over the kNN graph, weight 1 - |ni.nj|)
-               and counting points left pointing the wrong way: `frac_flipped`.
+               straddles both sheets. Reported as `ang_unoriented`, the angle to
+               the true normal ignoring sign.
+  orientation  the plane is right but the SIGN propagates across the gap between
+               the sheets and comes out inside-out over a patch. Reported as
+               `frac_flipped`, after the standard consistent-orientation pass
+               (minimum spanning tree over the kNN graph, weight 1 - |ni.nj|).
 
-  Poisson needs both. `frac_nb_opposite` is the mechanism behind either one: the
-  fraction of a point's neighbours that genuinely sit on the far sheet, known
-  exactly here because the truth comes from the mesh, not from an estimate.
+Poisson needs both. `frac_nb_opposite` is the mechanism behind either: the
+fraction of a point's neighbours genuinely on the far sheet, known exactly here
+because the truth comes from the mesh rather than from an estimate.
 
-WHERE THE TRUTH COMES FROM
-  The ground-truth points in the cache were sampled off a mesh, so their true
-  normals are that mesh's face normals -- no closest-point query needed, and no
-  approximation. `prepare_skullfix.py`'s pipeline is re-run here (marching cubes
-  on the raw nrrd, the same anisotropic spacing matmul, the same seeds) to
-  recover the mesh, the face index of every sampled point, and the normalisation
-  that the cache is expressed in. That re-run is checked, not assumed: `scale`
-  and the ground-truth points themselves must come back identical to the cache,
-  and the script refuses to report anything if they do not.
+The ground-truth points were sampled off a mesh, so their true normals are that
+mesh's face normals -- no closest-point query and no approximation. The data
+pipeline is re-run here to recover the mesh, the face index of every sampled
+point, and the normalisation the cache is expressed in. That re-run is checked
+rather than assumed: `scale` and the points themselves must come back identical
+to the cache, or nothing is reported.
 
-⚠️ NOT a statement about the model. Every number here is measured on GROUND
-  TRUTH points. A prediction's normals can only be worse -- it has clumping the
-  ground truth does not (1.34% against 0.0%) -- so ground truth is the
-  optimistic case and the right place to test feasibility.
+Warning: this says nothing about the model. Every number is measured on GROUND
+TRUTH points, which are farthest-point sampled and free of clumping. A
+prediction's normals can only be worse, so this is the optimistic case and the
+right place to test feasibility.
 
     python src/eval/normal_quality.py [--n 8] [--self-test]
 """
@@ -175,7 +162,7 @@ def _task_seed(sid, raw_root, base_seed=42):
     for i, f in enumerate(files):
         if os.path.splitext(os.path.basename(f))[0] == sid:
             return base_seed + i
-    raise SystemExit(f"{sid}: 在 {raw_root}/complete_skull 下找不到对应的 .nrrd")
+    raise SystemExit(f"{sid}: no matching .nrrd under {raw_root}/complete_skull")
 
 
 def truth_for(sid, raw_root, n_dense=16384, n_out=6144, level=0.5, base_seed=42):
@@ -228,12 +215,13 @@ def analyse(repo, sids, raw_root):
         d_pts = float(np.abs(pts - gt[j]).max())
         if d_scale > 1e-3 or d_pts > 1e-5:
             raise SystemExit(
-                f"{sid}: 复现 prepare_skullfix 失败 —— scale 差 {d_scale:.3e}、"
-                f"GT 点最大差 {d_pts:.3e}。坐标系没对上，后面的法向真值全都无意义，"
-                f"已中止。（检查 --raw-root、trimesh 版本、以及 prepare_skullfix 的 seed）")
+                f"{sid}: could not reproduce the data pipeline -- scale differs by "
+                f"{d_scale:.3e} and the ground-truth points by {d_pts:.3e}. The frames do "
+                f"not line up, so every normal below would be meaningless. Aborted. "
+                f"(check --raw-root, the trimesh version, and the pipeline's seed)")
         if not checks["winding_consistent"]:
-            print(f"⚠️ {sid}: 网格绕行方向不一致 —— 面法向的**朝向**不可信，"
-                  f"本行的 frac_flipped 要打折扣看")
+            print(f"Warning: {sid} has inconsistent winding, so the face normals' SIGN "
+                  f"cannot be trusted and this row's frac_flipped is weakened")
 
         s_mm = float(scales[j])
         for k in KS:
@@ -259,15 +247,15 @@ def analyse(repo, sids, raw_root):
                 "watertight": checks["watertight"],
                 "winding_consistent": checks["winding_consistent"],
             })
-        print(f"  {sid} ✓  (scale 复现差 {d_scale:.2e}，GT 点复现差 {d_pts:.2e})")
+        print(f"  {sid} ok  (scale reproduced to {d_scale:.2e}, points to {d_pts:.2e})")
     return pd.DataFrame(rows)
 
 
 def report(df):
-    print(f"\n{'=' * 92}\n法向估计质量（{df['id'].nunique()} 颗颅骨的 **GT 点**，"
-          f"真值取自网格面法向）\n{'=' * 92}")
-    head = (f"{'k':>4}{'邻域半径mm':>12}{'邻居在对面片的比例':>20}"
-            f"{'未定向夹角中位':>16}{'平面就错了 >20°':>17}{'定向后翻转':>13}")
+    print(f"\n{'=' * 92}\nnormal estimation quality on GROUND-TRUTH points "
+          f"({df['id'].nunique()} skulls; truth from the mesh's face normals)\n{'=' * 92}")
+    head = (f"{'k':>4}{'radius mm':>12}{'nbrs on far sheet':>20}"
+            f"{'median angle':>16}{'plane wrong >20deg':>19}{'flipped':>11}")
     print(head)
     print("-" * 96)
     for k, g in df.groupby("k"):
@@ -279,22 +267,29 @@ def report(df):
     fl = df.groupby("k")["frac_flipped"].mean()
     pb = df.groupby("k")["frac_plane_bad"].mean()
     k_best = int(fl.idxmin())
-    print(f"\n  最好的一档是 k={k_best}：平面错误 {100*pb[k_best]:.1f}%、"
-          f"定向翻转 {100*fl[k_best]:.1f}%")
-    print(f"  参照：骨壳厚约 5~7mm，而上表「邻域半径」这一列就是邻域够到多远。")
+    print(f"\n  best setting is k={k_best}: {100*pb[k_best]:.1f}% of planes wrong, "
+          f"{100*fl[k_best]:.1f}% flipped after orientation")
+    print(f"  for scale: the shell is 5-7 mm thick, and the radius column above is how "
+          f"far each neighbourhood reaches.")
 
     if fl.min() > 0.10 or pb.min() > 0.30:
-        print("\n  ⛔ **闸门：不通过。** 法向估计在任何一档 k 上都不可用 —— "
-              "Poisson 从这些点做不出正确的面。\n"
-              "     → TODO 9 的 Step C（Poisson）不必做，也不必装 open3d；\n"
-              "       这本身是可写进论文的测量结论：**输出分辨率不足以支撑表面重建**。\n"
-              "     → Step B（点到面指标，用真 GT 网格）不受影响，照做。")
+        print("\n  GATE: FAILED. Normal estimation is unusable at every k, so Poisson "
+              "cannot build a correct\n"
+              "  surface from these points. There is no need to attempt it or to add the "
+              "dependency.\n"
+              "  This is itself a reportable measurement: the output resolution will not "
+              "support surface\n"
+              "  reconstruction. Point-to-surface metrics against the real mesh are "
+              "unaffected.")
     elif fl.min() > 0.02:
-        print("\n  ⚠️ **闸门：勉强。** 法向大体可用但翻转比例不低，"
-              "Poisson 可能在局部出现内外翻面。\n"
-              "     → 若继续做 Step C，重建结果必须逐颗目视检查，不能只看数字。")
+        print("\n  GATE: MARGINAL. Normals are broadly usable but the flipped fraction is "
+              "not small, so\n"
+              "  Poisson may turn patches inside out. Any reconstruction would have to be "
+              "inspected per\n"
+              "  skull rather than judged from the numbers.")
     else:
-        print("\n  ✅ **闸门：通过。** 法向可用，Step C（先量重建地板）可以做。")
+        print("\n  GATE: PASSED. Normals are usable, so measuring a reconstruction floor "
+              "is worthwhile.")
 
 
 def self_test():
@@ -305,49 +300,54 @@ def self_test():
     skull's own proportions must not.
     """
     rng = np.random.default_rng(0)
-    print("=== 自检 ===")
+    print("=== self-test ===")
 
     def sphere(n, r):
         v = rng.normal(size=(n, 3))
         return r * v / np.linalg.norm(v, axis=1, keepdims=True)
 
-    # ① 单层球面：真法向 = 径向。必须几乎全对，且没有翻转。
+    # 1. a single sphere: the true normal is radial. Almost all should be right,
+    #    with nothing flipped.
     P = sphere(6144, 100.0)
     T = P / np.linalg.norm(P, axis=1, keepdims=True)
     est = estimate_normals(P, 8)
     au, _ = angles(est, T)
     ori, _ = orient_normals(P, est)
     _, ao = angles(ori, T)
-    print(f"① 单层球面 r=100mm : 未定向夹角中位 {np.median(au):5.1f}°  "
-          f"平面错误 {100*(au>BAD_DEG).mean():4.1f}%  翻转 {100*(ao>90).mean():4.1f}%"
-          f"   {'✅' if (au>BAD_DEG).mean()<.05 and (ao>90).mean()<.02 else '❌ 估计器本身有问题'}")
+    print(f"1. sphere r=100mm  : median angle {np.median(au):5.1f}deg  "
+          f"planes wrong {100*(au>BAD_DEG).mean():4.1f}%  flipped {100*(ao>90).mean():4.1f}%"
+          f"   {'ok' if (au>BAD_DEG).mean()<.05 and (ao>90).mean()<.02 else 'FAIL -- the estimator itself is broken'}")
 
-    # ② 双层壳，间距 6mm，点间距约 4mm —— 颅骨的真实比例。必须明显退化。
+    # 2. two sheets 6 mm apart at about 4 mm spacing -- the skull's real proportions.
+    #    This must degrade visibly.
     inner, outer = sphere(3072, 97.0), sphere(3072, 103.0)
     P2 = np.r_[inner, outer]
-    T2 = np.r_[-inner / 97.0, outer / 103.0]          # 内层法向朝腔内
+    T2 = np.r_[-inner / 97.0, outer / 103.0]          # the inner sheet faces the cavity
     est2 = estimate_normals(P2, 8)
     au2, _ = angles(est2, T2)
     ori2, _ = orient_normals(P2, est2)
     _, ao2 = angles(ori2, T2)
     sp = np.median(cKDTree(P2).query(P2, k=2)[0][:, 1])
-    print(f"② 双层壳 6mm/间距{sp:.1f}mm: 未定向夹角中位 {np.median(au2):5.1f}°  "
-          f"平面错误 {100*(au2>BAD_DEG).mean():4.1f}%  翻转 {100*(ao2>90).mean():4.1f}%"
-          f"   {'✅ 如预期退化' if (au2>BAD_DEG).mean() > (au>BAD_DEG).mean() else '⚠️ 没退化，与预期不符'}")
+    print(f"2. shell 6mm/{sp:.1f}mm : median angle {np.median(au2):5.1f}deg  "
+          f"planes wrong {100*(au2>BAD_DEG).mean():4.1f}%  flipped {100*(ao2>90).mean():4.1f}%"
+          f"   {'ok, degrades as expected' if (au2>BAD_DEG).mean() > (au>BAD_DEG).mean() else 'FAIL -- no degradation, contrary to expectation'}")
 
-    # ③ 法向必须是单位向量
-    print(f"③ 单位长度        : 最大偏差 {np.abs(np.linalg.norm(est,axis=1)-1).max():.2e}  "
-          f"{'✅' if np.abs(np.linalg.norm(est,axis=1)-1).max() < 1e-9 else '❌'}")
+    # 3. normals must be unit vectors
+    print(f"3. unit length     : largest deviation "
+          f"{np.abs(np.linalg.norm(est,axis=1)-1).max():.2e}  "
+          f"{'ok' if np.abs(np.linalg.norm(est,axis=1)-1).max() < 1e-9 else 'FAIL'}")
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--self-test", action="store_true",
-                    help="只跑合成几何的对照，不碰数据")
+                    help="run only the synthetic controls, touching no data")
     ap.add_argument("--from-run", default="msn_skullfix/cd_rep05_full_f0",
-                    help="取哪一轮的验证颅骨（只读 run.json，不建模型、不要 GPU）")
-    ap.add_argument("--n", type=int, default=8, help="颅骨数（与 surface_quality / roughness 同批）")
+                    help="whose validation skulls to use; only run.json is read, no model "
+                         "is built and no GPU is needed")
+    ap.add_argument("--n", type=int, default=8, help="how many skulls (the same cohort as "
+                                                    "roughness.py)")
     ap.add_argument("--raw-root", default=os.path.join(REPO, paths.RAW_ROOT))
     ap.add_argument("--out", default=OUT_CSV)
     args = ap.parse_args()
@@ -358,18 +358,17 @@ def main():
 
     import report as rp
     sids = rp.Run(REPO, args.from_run).meta["val_ids"][:args.n]
-    print(f"复现 prepare_skullfix 的管线以取得真值法向（{len(sids)} 颗，每颗 2 个体数据）…")
+    print(f"re-running the data pipeline to recover true normals "
+          f"({len(sids)} skulls, 2 volumes each)...")
     df = analyse(REPO, sids, args.raw_root)
     report(df)
 
     out = os.path.join(REPO, args.out)
     if os.path.exists(out):
-        # ⚠️ dtype={"id": str} 是必须的，而且 astype(str) 顶不上它。
-        # `id` 是 '083' 这种带前导零的编号：不指定 dtype，pandas 读回来是整数 83，
-        # 而 str(83) == '83' != '083' —— 键仍然对不上，旧行被当成不同的行留下来。
-        # 实测 p2s.csv 就这样变成 16 行：同一批预测的两种口径并存，而且因为
-        # 「与掩码无关的列」两组逐位相同，看表的人不会察觉。
-        # （2026-08-28；本周同一个陷阱的第五次，前四次的「修复」都不够彻底。）
+        # dtype={"id": str} is required, and astype(str) does not substitute for it:
+        # ids carry a leading zero ('083'), pandas reads them back as the integer 83,
+        # and str(83) is '83'. The key then fails to match and the old rows survive
+        # as duplicates -- silently, because their other columns are identical.
         old = pd.read_csv(out, dtype={"id": str})
         KEY = ['id', 'k']
         k_old = old[KEY].astype(str).apply(tuple, axis=1)

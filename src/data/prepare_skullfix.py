@@ -5,9 +5,9 @@ Reconstructed after the original script was lost to a machine reset (never
 committed to git -- data/ and experiments/ are gitignored on purpose, but this
 .py file should not have been). Rebuilt from what survived: the raw-data layout
 and baseline nrrd->point-cloud logic in notebooks/explore_skull.ipynb, and the
-fixes documented in notebooks/MSN_train_skullfix.ipynb's "相对 demo 改了
-什么" section (A and E below). If you find the original script, diff it against
-this one before trusting either.
+fixes listed under "What this reimplementation changed" in notebooks/README.md
+(A and E below are the two that concern data preparation). If you find the
+original script, diff it against this one before trusting either.
 
 Raw layout (see notebooks/explore_skull.ipynb):
     data/14161307/SkullFix/training_set/complete_skull/*.nrrd

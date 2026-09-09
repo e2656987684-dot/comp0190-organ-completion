@@ -1,48 +1,41 @@
-"""
-Surface-quality visualisation and diagnostics for predicted point clouds.
+"""Surface-quality visualisation and diagnostics for predicted point clouds.
 
-WHAT THIS IS FOR
-  Scatter plots of 6144 loose points make it very hard to judge whether a
-  predicted skull surface is any good. This module turns a point cloud into a
-  shaded mesh you can actually read, plus the two diagnostics that a mesh alone
-  hides, plus the numbers that settle "did it really improve?" objectively.
+Scatter plots of 6144 loose points make it hard to judge whether a predicted
+surface is any good. This turns a point cloud into a shaded mesh that can be
+read, adds the two diagnostics a mesh hides, and supplies the numbers that
+settle "did it really improve?".
 
-  Intended workflow: render a model's output now, change the training code,
-  render again, and compare -- both by eye and by `surface_stats`.
+Warning: VISUALISATION ONLY -- never compute a metric on these meshes.
+Reconstruction inflates the shape, with the original points sitting a median
+5.3 mm (p95 12.0 mm) from the reconstructed surface. That is the same order as
+the model's own error, so a metric computed here would be dominated by
+reconstruction artefacts. Every Chamfer and DCD number comes from the raw point
+clouds.
 
-⚠ VISUALISATION ONLY -- NEVER COMPUTE METRICS ON THESE MESHES
-  Reconstruction inflates the shape: measured on skull_083, the original points
-  sit a median of 5.3 mm (p95 12.0 mm) from the reconstructed surface. That is
-  the same order as the model's own CD_t (~7 mm), so a metric computed on the
-  mesh would be dominated by reconstruction artefacts. All Chamfer/DCD numbers
-  must keep coming from the raw point clouds via msn_skullfix.calc_cd/calc_dcd.
+Warning: never tune RECON per figure when comparing runs. It is a module-level
+constant rather than a default argument you are invited to override, because
+every knob in it changes how smooth the result LOOKS -- tuning per figure lets a
+parameter change masquerade as a model improvement.
 
-⚠ NEVER TUNE RECON PER-FIGURE WHEN COMPARING RUNS
-  RECON below is deliberately a module-level constant, not a default argument
-  you are invited to override. Every knob in it changes how smooth the result
-  LOOKS, so tuning it per figure would let a parameter change masquerade as a
-  model improvement. Fix it once, keep it fixed across every run you compare.
+Why these values, measured on these skulls:
 
-WHY THESE RECON VALUES (measured on 4096/6144-point skulls, ~99 mm radius)
-  radius_mm=6.0  Each point becomes a ball; the surface is the r-isosurface of
-      the distance field. Point spacing is ~3.5-4.3 mm median (p95 ~5-6 mm), and
-      r below ~4 mm leaves the balls disconnected -- the skull renders as a
-      sponge. r must also stay well under the defect's ~20 mm+ extent or the
-      hole gets bridged and you lose the thing you are looking at. 5-6 mm is the
-      usable window; 6 mm sits at the smooth end of it.
+  radius_mm=6.0  Each point becomes a ball and the surface is the isosurface of
+      the distance field. Point spacing is 3.5-4.3 mm, and below about 4 mm the
+      balls stop touching and the skull renders as a sponge; the radius must also
+      stay well under the defect's extent or the hole gets bridged and the thing
+      being looked at disappears. 5-6 mm is the usable window.
   sigma=2.5   Gaussian blur of the distance field, in voxels. Removes the
-      "cobblestone" bumps left by individual balls. Without it you cannot see
-      real surface waviness through the reconstruction's own texture.
-  taubin=60   Taubin mesh smoothing. Taubin, NOT Laplacian: Laplacian shrinks
-      the model steadily with each iteration, Taubin does not.
-  res=128     Distance-field grid. 96 is noticeably faster and fine for a quick
-      look; 128 is the default because ~1 s per cloud is already cheap.
+      cobblestone bumps left by individual balls, without which real surface
+      waviness cannot be seen through the reconstruction's own texture.
+  taubin=60   Taubin mesh smoothing, NOT Laplacian: Laplacian shrinks the model
+      steadily with each iteration and Taubin does not.
+  res=128     Distance-field grid. 96 is faster and fine for a quick look.
 
-  Counter-intuitive but measured: MORE smoothing makes model differences MORE
-  visible, not less. At low smoothing both ground truth and prediction render as
-  the same pile of balls -- the reconstruction artefact swamps the signal. The
-  blur removes that texture and leaves the genuine low-frequency waviness, which
-  is where predictions actually differ from ground truth.
+Counter-intuitive but measured: MORE smoothing makes model differences more
+visible, not less. At low smoothing both ground truth and prediction render as
+the same pile of balls and the artefact swamps the signal; the blur removes that
+texture and leaves the genuine low-frequency waviness, which is where predictions
+actually differ.
 """
 
 from __future__ import annotations
@@ -78,6 +71,11 @@ PRESETS = {
     "default": {"radius_mm": 6.0, "sigma": 2.5, "taubin": 60},
     # aggressive: only gross shape survives. Useful to check overall form, but
     # it will hide real surface defects too -- do not judge quality from this.
+    # ⚠️ sigma is in VOXELS, so this preset gets stronger as `res` drops. Below
+    # about res=96 it perforates a cranial vault: the blurred field rises above
+    # the isolevel across a thin shell and marching cubes opens a hole that is
+    # not in the points. Measured on GT skull 039, same preset, res only --
+    # Euler characteristic 0 at res=64 (holed) against 2 at res=128 (closed).
     "heavy":   {"radius_mm": 7.0, "sigma": 4.0, "taubin": 120},
 }
 
@@ -105,6 +103,12 @@ CLUMP_MM = 2.0
 CAMERAS = {
     "default": dict(x=0.0, y=-1.5, z=1.15),
     "defect": dict(x=0.02, y=1.30, z=1.46),
+    # Azimuth 225 deg, elevation 15 deg: the three-quarter view anatomy is read
+    # from -- orbit, zygomatic arch, temporal region and vault all visible at
+    # once, so two panels can be compared as skulls rather than as blobs.
+    # "default" and "defect" both look at the back of the head, where a cranium
+    # has no landmarks; picked by rendering an 8-azimuth x 2-elevation sweep.
+    "three_quarter": dict(x=-1.297, y=-1.297, z=0.492),
 }
 
 
@@ -349,6 +353,11 @@ def fig_smoothing_ladder(points, scale_mm, levels=("raw", "light", "default", "h
     NOT a comparison tool. Two models rendered through this will differ by
     whatever the reconstruction does, so use it on one cloud at a time; model
     comparison goes through `fig_meshes` at the locked RECON settings.
+
+    ⚠️ Lowering `res` strengthens every rung, because PRESETS give sigma in
+    voxels. At res=64 the "heavy" rung opens a hole through the cranial vault
+    even on ground truth -- see the note on that preset. Read a perforated
+    panel as "this res is too coarse for this sigma", never as a defect.
 
     A single level can be passed as a bare string: levels="raw" behaves the
     same as levels=("raw",). Without this, the missing-comma version is a

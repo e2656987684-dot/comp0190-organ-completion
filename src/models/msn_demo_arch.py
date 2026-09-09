@@ -40,9 +40,10 @@ def pairwise_distance(xyz1, xyz2):
     n = xyz1.shape[1]
     c = xyz1.shape[2]
     m = xyz2.shape[1]
-    # 这里会 materialize 一个 (N, M, 3) 的两两距离张量（比如 4096x4096x3），
-    # 换过 cuda_malloc_async 分配器还是会 OOM，说明确实是显存不够而不是碎片化，
-    # 挪到 CPU 算（这几千个点的规模对 CPU 来说很快），不影响模型输出结果。
+    # This materialises a pairwise (N, M, 3) tensor -- 4096x4096x3 here. Switching
+    # to the cuda_malloc_async allocator still ran out of memory, so it is genuinely
+    # short of VRAM rather than fragmented. Computed on the CPU instead, which is
+    # fast enough at a few thousand points and leaves the model's output unchanged.
     with tf.device('/CPU:0'):
         xyz1 = tf.tile(tf.reshape(xyz1, (-1,1,n,c)), [1,m,1,1])
         xyz2 = tf.tile(tf.reshape(xyz2, (-1,m,1,c)), [1,1,n,1])
