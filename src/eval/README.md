@@ -32,6 +32,7 @@ into `experiments_log/`.
 | `fold_text_branch.py` | that the text branch folds into four bias vectors | terminal only | yes |
 | `mesh_preview.py` | a rendered look at one completion | `reports/preview/*.png` | yes |
 | `make_report_figures.py` | the figures for the write-up | `reports/figures/*.png` | yes |
+| `fig_qualitative_completion.py` | one case as input, completion and ground truth, rebuilt on one shared grid and camera | `reports/figures/qualitative_completion_case039.png` | no |
 
 ## Usage
 

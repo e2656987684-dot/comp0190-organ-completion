@@ -144,7 +144,13 @@ $PY src/eval/recompute_eval_all.py            # 约 15 分钟，合并写 eval_a
 $PY src/eval/make_report_figures.py           # -> reports/figures/ 七张 PNG + summary.csv
 $PY src/eval/mesh_preview.py --run cd_rep05_full_f0 --skull 039 --truth \
     --camera defect --out reports/figures/defect_4panel   # 缺损四格图
+$PY src/eval/fig_qualitative_completion.py                  # 论文图 1：039 缺损输入 / 补全 / 真值（斜视角），不要 GPU、不要权重
+$PY src/eval/fig_qualitative_completion.py --camera defect  # 同一张图、开口正对读者 -> ..._case039_defect.png
+$PY src/eval/fig_qualitative_completion.py --smoothing light                  # light 平滑 -> ..._case039_light.png
+$PY src/eval/fig_qualitative_completion.py --camera defect --smoothing light  # -> ..._case039_defect_light.png
 ```
+
+⚠️ `--smoothing light` 会在薄处开出**重建假孔**：039 上真值欧拉数 2 → −2、预测 2 → −8（预测点分布更不均，假孔更多），见 devlog 2026-09-11 第四条。
 
 ⚠️ 需要无头 Chrome（`setup_env.sh` 第 5 节）。**3D 用 PNG，2D 曲线用 SVG/PDF**
 （矢量，放大不糊）。`RUNS` 现在指向干净 2×2 —— **哪几个 run 讲故事是叙事选择，写论文时随便改。**

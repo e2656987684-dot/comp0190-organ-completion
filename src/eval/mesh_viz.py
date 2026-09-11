@@ -103,6 +103,10 @@ CLUMP_MM = 2.0
 CAMERAS = {
     "default": dict(x=0.0, y=-1.5, z=1.15),
     "defect": dict(x=0.02, y=1.30, z=1.46),
+    # The defect camera turned 39 deg in azimuth and lowered 18 deg (to 50 / 30), at
+    # the same distance: the opening stays in view while the side of the vault and
+    # the temporal region show, so a panel reads as a skull rather than a dome.
+    "defect_oblique": dict(x=1.088, y=1.297, z=0.977),
     # Azimuth 225 deg, elevation 15 deg: the three-quarter view anatomy is read
     # from -- orbit, zygomatic arch, temporal region and vault all visible at
     # once, so two panels can be compared as skulls rather than as blobs.
@@ -111,8 +115,13 @@ CAMERAS = {
     "three_quarter": dict(x=-1.297, y=-1.297, z=0.492),
 }
 
+# Shading for every mesh figure. Named so a figure built outside fig_meshes can
+# match the rest of reports/ instead of carrying its own copy.
+MESH_LIGHTING = dict(ambient=0.42, diffuse=0.85, specular=0.12, roughness=0.85, fresnel=0.1)
+MESH_LIGHT_POSITION = dict(x=120, y=180, z=200)
 
-def pc_to_mesh(points, scale_mm, **overrides):
+
+def pc_to_mesh(points, scale_mm, *, bounds=None, **overrides):
     """Point cloud -> shaded-renderable mesh, via a KD-tree distance field.
 
     Poisson reconstruction would be the usual choice and is deliberately not
@@ -134,6 +143,10 @@ def pc_to_mesh(points, scale_mm, **overrides):
       sigma      distance-field blur in voxels, 0-4. The main smoothness knob.
       taubin     mesh smoothing passes, 0-120. Cheap; does not shrink the model.
       res        grid size, 96 (fast) to 160 (fine). Cost is roughly res^3.
+      bounds     (lo, hi) grid corners, replacing the cloud's own box and `pad`.
+          Pass one shared box when panels must be reconstructed identically:
+          `sigma` is in voxels, so clouds with different extents otherwise get
+          different blur in millimetres.
 
     Overriding for a single model is fine and useful. Overriding while comparing
     models is not -- see the module docstring.
@@ -142,7 +155,12 @@ def pc_to_mesh(points, scale_mm, **overrides):
     P = np.asarray(points, dtype=np.float64)
     r = cfg["radius_mm"] / scale_mm
 
-    lo, hi = P.min(0) - cfg["pad"], P.max(0) + cfg["pad"]
+    if bounds is None:
+        lo, hi = P.min(0) - cfg["pad"], P.max(0) + cfg["pad"]
+    else:
+        lo, hi = (np.asarray(b, dtype=np.float64) for b in bounds)
+        if (P < lo).any() or (P > hi).any():
+            raise ValueError("bounds do not contain the cloud; the surface would be clipped")
     res = cfg["res"]
     axes = [np.linspace(lo[i], hi[i], res) for i in range(3)]
     grid = np.stack(np.meshgrid(*axes, indexing="ij"), -1).reshape(-1, 3)
@@ -323,9 +341,7 @@ def fig_meshes(items, title="", height=620, camera="default"):
         fig.add_trace(go.Mesh3d(x=v[:, 0], y=v[:, 1], z=v[:, 2],
                                 i=f[:, 0], j=f[:, 1], k=f[:, 2],
                                 color="#d8d2c4", flatshading=False,
-                                lighting=dict(ambient=0.42, diffuse=0.85, specular=0.12,
-                                              roughness=0.85, fresnel=0.1),
-                                lightposition=dict(x=120, y=180, z=200),
+                                lighting=MESH_LIGHTING, lightposition=MESH_LIGHT_POSITION,
                                 showscale=False, hoverinfo="skip"), row=1, col=i)
     eye = CAMERAS[camera] if isinstance(camera, str) else camera
     scene = dict(aspectmode="data", xaxis_visible=False, yaxis_visible=False,
